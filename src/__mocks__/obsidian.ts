@@ -1,12 +1,12 @@
 export class Plugin {
-	app = {};
+	app: Record<string, unknown> = {};
 	manifest = {};
 	loadData = async () => ({});
 	saveData = async () => {};
-	addCommand = () => {};
+	addCommand = (_cmd: unknown) => {};
 	addSettingTab = () => {};
-	addRibbonIcon = () => {};
-	registerView = () => {};
+	addRibbonIcon = (_icon: string, _title: string, _callback: () => void) => createMockEl();
+	registerView = (_type: string, _factory: (leaf: unknown) => unknown) => {};
 	registerEvent = () => {};
 	registerDomEvent = () => {};
 	registerInterval = () => 0;
@@ -43,6 +43,7 @@ export class SuggestModal {
 	}
 	open() {}
 	close() {}
+	setPlaceholder(_text: string) {}
 	getSuggestions(): unknown[] { return []; }
 	renderSuggestion() {}
 	onChooseSuggestion() {}
@@ -60,21 +61,44 @@ export class Modal {
 	onClose() {}
 }
 
+function createMockEl(): Record<string, unknown> {
+	const el: Record<string, unknown> = {
+		empty: () => {},
+		createEl: (_tag: string, _opts?: Record<string, unknown>) => createMockEl(),
+		createDiv: (_opts?: Record<string, unknown>) => createMockEl(),
+		addClass: (_cls: string) => {},
+		removeClass: (_cls: string) => {},
+		setText: (_text: string) => {},
+		show: () => {},
+		hide: () => {},
+		addEventListener: (_event: string, _handler: () => void) => {},
+		closest: (_selector: string) => null,
+		getAttr: (_name: string) => null,
+		innerHTML: "",
+		scrollTop: 0,
+		scrollHeight: 0,
+		textContent: "",
+		className: "",
+	};
+	return el;
+}
+
+export class WorkspaceLeaf {
+	view: unknown = null;
+	async setViewState(_state: unknown) {}
+}
+
 export class ItemView {
 	app: unknown;
-	containerEl = {
-		empty: () => {},
-		children: [],
-	};
-	contentEl = {
-		empty: () => {},
-		createEl: () => ({}),
-		createDiv: () => ({ empty: () => {}, createEl: () => ({}), createDiv: () => ({}) }),
-		innerHTML: "",
-	};
-	constructor() {}
+	leaf: unknown;
+	containerEl = createMockEl();
+	contentEl = createMockEl();
+	constructor(leaf?: unknown) {
+		this.leaf = leaf;
+	}
 	getViewType() { return ""; }
 	getDisplayText() { return ""; }
+	getIcon() { return ""; }
 	onOpen() { return Promise.resolve(); }
 	onClose() { return Promise.resolve(); }
 }

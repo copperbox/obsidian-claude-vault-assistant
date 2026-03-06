@@ -7,6 +7,7 @@ export interface PluginSettings {
 	maxTurns: number;
 	maxBudget: number | null;
 	modelOverride: string;
+	maxHistoryEntries: number;
 }
 
 export const DEFAULT_SETTINGS: PluginSettings = {
@@ -15,6 +16,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
 	maxTurns: 50,
 	maxBudget: null,
 	modelOverride: "",
+	maxHistoryEntries: 50,
 };
 
 export function parseSettings(data: unknown): PluginSettings {
@@ -112,6 +114,22 @@ export class ClaudeVaultSettingTab extends PluginSettingTab {
 					.onChange(async (value) => {
 						this.plugin.settings.modelOverride = value;
 						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName("Max history entries")
+			.setDesc("Maximum number of run history entries to keep. Oldest entries are pruned first.")
+			.addText((text) =>
+				text
+					.setPlaceholder("50")
+					.setValue(String(this.plugin.settings.maxHistoryEntries))
+					.onChange(async (value) => {
+						const parsed = parseInt(value, 10);
+						if (!isNaN(parsed) && parsed > 0) {
+							this.plugin.settings.maxHistoryEntries = parsed;
+							await this.plugin.saveSettings();
+						}
 					})
 			);
 	}

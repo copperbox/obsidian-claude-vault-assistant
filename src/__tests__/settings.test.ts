@@ -8,6 +8,7 @@ describe("DEFAULT_SETTINGS", () => {
 		expect(DEFAULT_SETTINGS.maxTurns).toBe(50);
 		expect(DEFAULT_SETTINGS.maxBudget).toBeNull();
 		expect(DEFAULT_SETTINGS.modelOverride).toBe("");
+		expect(DEFAULT_SETTINGS.maxHistoryEntries).toBe(50);
 	});
 });
 
@@ -38,6 +39,7 @@ describe("parseSettings", () => {
 			maxTurns: 10,
 			maxBudget: 5.0,
 			modelOverride: "sonnet",
+			maxHistoryEntries: 25,
 		};
 		const result = parseSettings(overrides);
 		expect(result).toEqual(overrides);
