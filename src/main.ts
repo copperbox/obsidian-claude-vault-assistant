@@ -1,11 +1,26 @@
 import { Plugin } from "obsidian";
+import {
+	ClaudeVaultSettingTab,
+	DEFAULT_SETTINGS,
+	parseSettings,
+	type PluginSettings,
+} from "./settings";
 
 export default class ClaudeVaultAssistant extends Plugin {
+	settings: PluginSettings = DEFAULT_SETTINGS;
+
 	async onload() {
-		console.log("Loading Claude Vault Assistant");
+		await this.loadSettings();
+		this.addSettingTab(new ClaudeVaultSettingTab(this.app, this));
 	}
 
-	onunload() {
-		console.log("Unloading Claude Vault Assistant");
+	onunload() {}
+
+	async loadSettings() {
+		this.settings = parseSettings(await this.loadData());
+	}
+
+	async saveSettings() {
+		await this.saveData(this.settings);
 	}
 }
