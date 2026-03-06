@@ -1,7 +1,8 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import {
 	buildPrompt,
 	buildArgs,
+	buildSpawnEnv,
 	ClaudeRunner,
 	ClaudeRunnerError,
 	type RunOptions,
@@ -162,6 +163,34 @@ describe("buildArgs", () => {
 		// Plugin prompt first, user prompt second
 		expect(args[indices[0]! + 1]).toContain("[[wiki links]]");
 		expect(args[indices[1]! + 1]).toBe("You are helpful.");
+	});
+});
+
+describe("buildSpawnEnv", () => {
+	const originalPlatform = process.platform;
+
+	afterEach(() => {
+		Object.defineProperty(process, "platform", { value: originalPlatform });
+	});
+
+	it("augments PATH with common binary dirs on non-win32", () => {
+		Object.defineProperty(process, "platform", { value: "darwin" });
+		const env = buildSpawnEnv();
+		expect(env.PATH).toContain("/usr/local/bin");
+		expect(env.PATH).toContain("/opt/homebrew/bin");
+		expect(env.PATH).toContain("/.local/bin");
+	});
+
+	it("does not modify PATH on win32", () => {
+		Object.defineProperty(process, "platform", { value: "win32" });
+		const env = buildSpawnEnv();
+		expect(env.PATH).toBe(process.env.PATH);
+	});
+
+	it("preserves existing PATH entries", () => {
+		Object.defineProperty(process, "platform", { value: "linux" });
+		const env = buildSpawnEnv();
+		expect(env.PATH).toContain(process.env.PATH);
 	});
 });
 

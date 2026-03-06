@@ -1,4 +1,6 @@
 import { type ChildProcess, spawn } from "child_process";
+import { delimiter } from "path";
+import { homedir } from "os";
 import type { PluginSettings } from "./settings";
 
 export type RunScope = "vault" | "note";
@@ -77,6 +79,25 @@ export function buildArgs(options: RunOptions): string[] {
 	return args;
 }
 
+/**
+ * GUI apps on macOS/Linux don't inherit the user's shell PATH,
+ * so we augment it with common binary locations where the Claude CLI
+ * is likely installed.
+ */
+export function buildSpawnEnv(): NodeJS.ProcessEnv {
+	const env = { ...process.env };
+	if (process.platform !== "win32") {
+		const home = homedir();
+		const extraPaths = [
+			"/usr/local/bin",
+			"/opt/homebrew/bin",
+			`${home}/.local/bin`,
+		];
+		env.PATH = `${extraPaths.join(delimiter)}${delimiter}${env.PATH || ""}`;
+	}
+	return env;
+}
+
 export class ClaudeRunner {
 	private activeProcess: ChildProcess | null = null;
 
@@ -95,6 +116,7 @@ export class ClaudeRunner {
 		const child = spawn(options.settings.cliPath, args, {
 			cwd: options.vaultPath,
 			stdio: ["ignore", "pipe", "pipe"],
+			env: buildSpawnEnv(),
 		});
 
 		this.activeProcess = child;
