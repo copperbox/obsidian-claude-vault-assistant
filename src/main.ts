@@ -206,9 +206,7 @@ export default class ClaudeVaultAssistant extends Plugin {
 		let systemPrompt: string | undefined;
 		const claudeMdFile = this.app.vault.getFileByPath("CLAUDE.md");
 		if (claudeMdFile) {
-			console.log("Found CLAUDE.md file, reading system prompt from it.");
 			systemPrompt = await this.app.vault.read(claudeMdFile);
-			console.log("System prompt content:", systemPrompt);
 		}
 
 		// Accumulate output text for history

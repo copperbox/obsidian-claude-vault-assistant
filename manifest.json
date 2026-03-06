@@ -1,7 +1,7 @@
 {
 	"id": "claude-vault-assistant",
 	"name": "Claude Vault Assistant",
-	"version": "1.0.0",
+	"version": "1.0.1",
 	"minAppVersion": "0.15.0",
 	"description": "Define reusable prompt files and run them against your vault or active note using Claude Code CLI.",
 	"author": "Daniel Essig",

@@ -85,6 +85,17 @@ Prompts with overrides display badges in the picker so you can see at a glance w
 
 After Claude edits files, the plugin automatically refreshes modified files in Obsidian so you see changes immediately without needing to reopen or reload.
 
+## Privacy & Network Usage
+
+This plugin spawns the [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) as a local child process. When you run a prompt, the CLI sends your prompt content and relevant vault files to Anthropic's API for processing. No data is sent by the plugin itself — all network communication is handled by the CLI.
+
+- **Account required**: You need an authenticated Anthropic account with billing to use the Claude Code CLI.
+- **What is sent**: Prompt file contents, vault file contents read by Claude during a run, and any system prompt from your `CLAUDE.md` file.
+- **What is stored locally**: Run history (prompt name, scope, timestamps, cost, and output) is stored in the plugin's data file within your vault's `.obsidian/plugins/` directory.
+- **No telemetry**: This plugin does not collect analytics or send any data independently of the CLI.
+
+See [Anthropic's Privacy Policy](https://www.anthropic.com/privacy) for details on how Anthropic handles data sent via the CLI.
+
 ## Settings
 
 Configure the plugin in Obsidian Settings > Claude Vault Assistant:
