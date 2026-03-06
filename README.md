@@ -2,8 +2,6 @@
 
 An Obsidian plugin that lets you define reusable prompt files (`PROMPT-*.md`) and run them against your vault or the currently active note using the Claude Code CLI in headless mode.
 
-> **Note**: This plugin is feature-complete and no longer under active development. Bug reports are welcome but new features are not planned.
-
 ## Prerequisites
 
 - [Obsidian](https://obsidian.md/) v0.15.0+
