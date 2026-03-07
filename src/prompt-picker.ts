@@ -108,12 +108,13 @@ export class PromptPickerModal extends SuggestModal<PromptFile> {
 		el.createEl("small", { text: prompt.path, cls: "prompt-picker-path" });
 	}
 
-	async onChooseSuggestion(prompt: PromptFile): Promise<void> {
-		const content = await this.readContent(prompt.path);
-		this.onSelect({
-			name: prompt.name,
-			path: prompt.path,
-			content,
+	onChooseSuggestion(prompt: PromptFile): void {
+		void this.readContent(prompt.path).then((content) => {
+			this.onSelect({
+				name: prompt.name,
+				path: prompt.path,
+				content,
+			});
 		});
 	}
 }

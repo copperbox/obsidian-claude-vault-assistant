@@ -40,24 +40,24 @@ export default class ClaudeVaultAssistant extends Plugin {
 
 		this.ribbonIconEl = this.addRibbonIcon(
 			"bot",
-			"Run Claude Prompt",
+			"Run Claude prompt",
 			() => this.openScopePickerAndRun()
 		);
 
 		this.addCommand({
 			id: "run-vault-prompt",
-			name: "Run Claude Prompt (Vault)",
+			name: "Run Claude prompt (vault)",
 			callback: () => this.openPickerAndRun("vault"),
 		});
 
 		this.addCommand({
 			id: "run-note-prompt",
-			name: "Run Claude Prompt (Active Note)",
+			name: "Run Claude prompt (active note)",
 			checkCallback: (checking) => {
 				const activeFile = this.app.workspace.getActiveFile();
 				if (!activeFile) return false;
 				if (!checking) {
-					this.openPickerAndRun("note");
+					void this.openPickerAndRun("note");
 				}
 				return true;
 			},
@@ -78,7 +78,7 @@ export default class ClaudeVaultAssistant extends Plugin {
 
 		this.addCommand({
 			id: "open-output",
-			name: "Open Claude Output",
+			name: "Open Claude output",
 			callback: () => this.activateOutputView(),
 		});
 	}
@@ -128,7 +128,7 @@ export default class ClaudeVaultAssistant extends Plugin {
 		const picker = new ScopePickerModal(
 			this.app,
 			hasActiveNote,
-			(scope) => this.openPickerAndRun(scope)
+			(scope) => { void this.openPickerAndRun(scope); }
 		);
 		picker.open();
 	}
@@ -158,8 +158,8 @@ export default class ClaudeVaultAssistant extends Plugin {
 			this.app,
 			prompts,
 			(path) => readPromptContent(this.app.vault, path),
-			async (result) => {
-				await this.executeRun(scope, result.name, result.content);
+			(result) => {
+				void this.executeRun(scope, result.name, result.content);
 			},
 			overridesMap
 		);
@@ -222,7 +222,6 @@ export default class ClaudeVaultAssistant extends Plugin {
 		// Accumulate output text for history
 		let accumulatedOutput = "";
 		let lastCostUsd: number | undefined;
-		let lastDurationMs: number | undefined;
 
 		try {
 			const child = this.runner.run({
@@ -252,7 +251,6 @@ export default class ClaudeVaultAssistant extends Plugin {
 					case "result":
 						lastStopReason = event.stopReason;
 						lastCostUsd = event.costUsd;
-						lastDurationMs = event.durationMs;
 						view.showResult(event.costUsd, event.durationMs);
 						break;
 				}
@@ -360,7 +358,7 @@ export default class ClaudeVaultAssistant extends Plugin {
 		const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE_CLAUDE_OUTPUT);
 		if (existing.length > 0) {
 			const leaf = existing[0]!;
-			this.app.workspace.revealLeaf(leaf);
+			await this.app.workspace.revealLeaf(leaf);
 			const view = leaf.view as ClaudeOutputView;
 			this.wireHistoryCallbacks(view);
 			return view;
@@ -372,7 +370,7 @@ export default class ClaudeVaultAssistant extends Plugin {
 			type: VIEW_TYPE_CLAUDE_OUTPUT,
 			active: true,
 		});
-		this.app.workspace.revealLeaf(leaf);
+		await this.app.workspace.revealLeaf(leaf);
 		const view = leaf.view as ClaudeOutputView;
 		this.wireHistoryCallbacks(view);
 		return view;

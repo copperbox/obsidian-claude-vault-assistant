@@ -20,7 +20,7 @@ describe("ClaudeOutputView", () => {
 
 	it("returns correct display text", () => {
 		const view = new ClaudeOutputView({} as never);
-		expect(view.getDisplayText()).toBe("Claude Output");
+		expect(view.getDisplayText()).toBe("Claude output");
 	});
 
 	it("returns correct icon", () => {

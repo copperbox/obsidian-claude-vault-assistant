@@ -16,7 +16,7 @@ export function extractPromptName(filename: string): string | null {
 	return match?.[1] ?? null;
 }
 
-export async function scanPromptFiles(vault: Vault): Promise<PromptFile[]> {
+export function scanPromptFiles(vault: Vault): PromptFile[] {
 	const files = vault.getMarkdownFiles();
 	const prompts: PromptFile[] = [];
 

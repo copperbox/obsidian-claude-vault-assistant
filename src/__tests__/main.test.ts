@@ -52,7 +52,7 @@ describe("ClaudeVaultAssistant command registration", () => {
 	it("registers a ribbon icon", () => {
 		expect(ribbonIconArgs).not.toBeNull();
 		expect(ribbonIconArgs!.icon).toBe("bot");
-		expect(ribbonIconArgs!.title).toBe("Run Claude Prompt");
+		expect(ribbonIconArgs!.title).toBe("Run Claude prompt");
 		expect(typeof ribbonIconArgs!.callback).toBe("function");
 	});
 
@@ -63,14 +63,14 @@ describe("ClaudeVaultAssistant command registration", () => {
 	it("registers Run Claude Prompt (Vault) command", () => {
 		const cmd = registeredCommands.find((c) => c.id === "run-vault-prompt");
 		expect(cmd).toBeDefined();
-		expect(cmd!.name).toBe("Run Claude Prompt (Vault)");
+		expect(cmd!.name).toBe("Run Claude prompt (vault)");
 		expect(cmd!.callback).toBeDefined();
 	});
 
 	it("registers Run Claude Prompt (Active Note) command with check", () => {
 		const cmd = registeredCommands.find((c) => c.id === "run-note-prompt");
 		expect(cmd).toBeDefined();
-		expect(cmd!.name).toBe("Run Claude Prompt (Active Note)");
+		expect(cmd!.name).toBe("Run Claude prompt (active note)");
 		expect(cmd!.checkCallback).toBeDefined();
 	});
 
@@ -84,7 +84,7 @@ describe("ClaudeVaultAssistant command registration", () => {
 	it("registers Open Claude Output command", () => {
 		const cmd = registeredCommands.find((c) => c.id === "open-output");
 		expect(cmd).toBeDefined();
-		expect(cmd!.name).toBe("Open Claude Output");
+		expect(cmd!.name).toBe("Open Claude output");
 		expect(cmd!.callback).toBeDefined();
 	});
 

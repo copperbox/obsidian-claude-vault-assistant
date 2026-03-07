@@ -55,14 +55,14 @@ export class ClaudeOutputView extends ItemView {
 	}
 
 	getDisplayText(): string {
-		return "Claude Output";
+		return "Claude output";
 	}
 
 	getIcon(): string {
 		return "terminal";
 	}
 
-	async onOpen(): Promise<void> {
+	onOpen(): Promise<void> {
 		const container = this.contentEl;
 		container.empty();
 		container.addClass("claude-output-container");
@@ -110,9 +110,10 @@ export class ClaudeOutputView extends ItemView {
 		// Restore persisted status
 		this.renderStatus(persistedStatus);
 		this.renderHistoryList();
+		return Promise.resolve();
 	}
 
-	async onClose(): Promise<void> {
+	onClose(): Promise<void> {
 		if (this.renderTimer) {
 			clearTimeout(this.renderTimer);
 			this.renderTimer = null;
@@ -129,6 +130,7 @@ export class ClaudeOutputView extends ItemView {
 		this.historyTab = null;
 		this.outputPane = null;
 		this.historyPane = null;
+		return Promise.resolve();
 	}
 
 	setOnStop(callback: () => void): void {
@@ -188,7 +190,7 @@ export class ClaudeOutputView extends ItemView {
 		// Clear history button
 		const toolbar = this.historyPane.createDiv({ cls: "claude-history-toolbar" });
 		const clearBtn = toolbar.createEl("button", {
-			text: "Clear History",
+			text: "Clear history",
 			cls: "claude-history-clear-btn",
 		});
 		clearBtn.addEventListener("click", () => {
@@ -431,7 +433,7 @@ export class ClaudeOutputView extends ItemView {
 	private renderMarkdown(): void {
 		if (!this.markdownEl || !this.markdownContent) return;
 		this.markdownEl.empty();
-		MarkdownRenderer.render(
+		void MarkdownRenderer.render(
 			this.app,
 			this.markdownContent,
 			this.markdownEl,
@@ -443,13 +445,13 @@ export class ClaudeOutputView extends ItemView {
 
 	private handleInternalLinkClick(evt: MouseEvent): void {
 		const target = evt.target as HTMLElement;
-		const link = target.closest("a.internal-link") as HTMLAnchorElement | null;
+		const link = target.closest("a.internal-link");
 		if (!link) return;
 
 		evt.preventDefault();
 		const href = link.getAttr("href");
 		if (href) {
-			this.app.workspace.openLinkText(href, "/", true);
+			void this.app.workspace.openLinkText(href, "/", true);
 		}
 	}
 
