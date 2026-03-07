@@ -2,7 +2,8 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import {
 	buildPrompt,
 	buildArgs,
-	buildSpawnEnv,
+	buildSpawnCommand,
+	shellEscape,
 	ClaudeRunner,
 	ClaudeRunnerError,
 	type RunOptions,
@@ -166,31 +167,85 @@ describe("buildArgs", () => {
 	});
 });
 
-describe("buildSpawnEnv", () => {
+describe("shellEscape", () => {
+	it("wraps a simple string in single quotes", () => {
+		expect(shellEscape("hello")).toBe("'hello'");
+	});
+
+	it("escapes embedded single quotes", () => {
+		expect(shellEscape("it's")).toBe("'it'\\''s'");
+	});
+
+	it("handles empty string", () => {
+		expect(shellEscape("")).toBe("''");
+	});
+
+	it("escapes shell metacharacters safely", () => {
+		const dangerous = '$(rm -rf /) && echo "pwned"';
+		const escaped = shellEscape(dangerous);
+		expect(escaped).toBe("'$(rm -rf /) && echo \"pwned\"'");
+	});
+
+	it("escapes multiple single quotes", () => {
+		expect(shellEscape("a'b'c")).toBe("'a'\\''b'\\''c'");
+	});
+});
+
+describe("buildSpawnCommand", () => {
 	const originalPlatform = process.platform;
+	const originalShell = process.env.SHELL;
 
 	afterEach(() => {
 		Object.defineProperty(process, "platform", { value: originalPlatform });
+		if (originalShell === undefined) {
+			delete process.env.SHELL;
+		} else {
+			process.env.SHELL = originalShell;
+		}
 	});
 
-	it("augments PATH with common binary dirs on non-win32", () => {
-		Object.defineProperty(process, "platform", { value: "darwin" });
-		const env = buildSpawnEnv();
-		expect(env.PATH).toContain("/usr/local/bin");
-		expect(env.PATH).toContain("/opt/homebrew/bin");
-		expect(env.PATH).toContain("/.local/bin");
-	});
-
-	it("does not modify PATH on win32", () => {
+	it("returns command and args directly on win32", () => {
 		Object.defineProperty(process, "platform", { value: "win32" });
-		const env = buildSpawnEnv();
-		expect(env.PATH).toBe(process.env.PATH);
+		const result = buildSpawnCommand("claude", ["-p", "hello"]);
+		expect(result.command).toBe("claude");
+		expect(result.spawnArgs).toEqual(["-p", "hello"]);
 	});
 
-	it("preserves existing PATH entries", () => {
+	it("wraps in login shell on darwin", () => {
+		Object.defineProperty(process, "platform", { value: "darwin" });
+		process.env.SHELL = "/bin/zsh";
+		const result = buildSpawnCommand("claude", ["-p", "hello"]);
+		expect(result.command).toBe("/bin/zsh");
+		expect(result.spawnArgs[0]).toBe("-l");
+		expect(result.spawnArgs[1]).toBe("-c");
+		expect(result.spawnArgs[2]).toContain("'claude'");
+		expect(result.spawnArgs[2]).toContain("'hello'");
+	});
+
+	it("wraps in login shell on linux", () => {
 		Object.defineProperty(process, "platform", { value: "linux" });
-		const env = buildSpawnEnv();
-		expect(env.PATH).toContain(process.env.PATH);
+		process.env.SHELL = "/bin/bash";
+		const result = buildSpawnCommand("claude", ["-p", "test"]);
+		expect(result.command).toBe("/bin/bash");
+		expect(result.spawnArgs).toEqual([
+			"-l",
+			"-c",
+			"'claude' '-p' 'test'",
+		]);
+	});
+
+	it("falls back to /bin/bash when SHELL is unset", () => {
+		Object.defineProperty(process, "platform", { value: "linux" });
+		delete process.env.SHELL;
+		const result = buildSpawnCommand("claude", []);
+		expect(result.command).toBe("/bin/bash");
+	});
+
+	it("escapes args containing single quotes", () => {
+		Object.defineProperty(process, "platform", { value: "darwin" });
+		process.env.SHELL = "/bin/zsh";
+		const result = buildSpawnCommand("claude", ["-p", "it's a test"]);
+		expect(result.spawnArgs[2]).toContain("'it'\\''s a test'");
 	});
 });
 

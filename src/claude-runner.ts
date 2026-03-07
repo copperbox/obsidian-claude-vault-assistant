@@ -1,6 +1,4 @@
 import { type ChildProcess, spawn } from "child_process";
-import { delimiter } from "path";
-import { homedir } from "os";
 import type { PluginSettings } from "./settings";
 
 export type RunScope = "vault" | "note";
@@ -80,22 +78,38 @@ export function buildArgs(options: RunOptions): string[] {
 }
 
 /**
- * GUI apps on macOS/Linux don't inherit the user's shell PATH,
- * so we augment it with common binary locations where the Claude CLI
- * is likely installed.
+ * Escape a string for safe inclusion in a single-quoted shell argument.
+ * Wraps in single quotes and escapes any embedded single quotes.
  */
-export function buildSpawnEnv(): NodeJS.ProcessEnv {
-	const env = { ...process.env };
-	if (process.platform !== "win32") {
-		const home = homedir();
-		const extraPaths = [
-			"/usr/local/bin",
-			"/opt/homebrew/bin",
-			`${home}/.local/bin`,
-		];
-		env.PATH = `${extraPaths.join(delimiter)}${delimiter}${env.PATH || ""}`;
+export function shellEscape(arg: string): string {
+	return "'" + arg.replace(/'/g, "'\\''") + "'";
+}
+
+/**
+ * Build the spawn command and args for the current platform.
+ *
+ * On macOS/Linux, GUI apps (Electron/Obsidian) don't inherit the user's
+ * shell environment. We spawn through a login shell (`$SHELL -l -c ...`)
+ * so that ~/.bash_profile, ~/.zshrc, etc. are sourced — picking up PATH,
+ * ANTHROPIC_BASE_URL, ANTHROPIC_AUTH_TOKEN, and any other env vars.
+ *
+ * On Windows, the full system PATH is already available, so we spawn
+ * the CLI directly.
+ */
+export function buildSpawnCommand(
+	cliPath: string,
+	args: string[]
+): { command: string; spawnArgs: string[] } {
+	if (process.platform === "win32") {
+		return { command: cliPath, spawnArgs: args };
 	}
-	return env;
+
+	const userShell = process.env.SHELL || "/bin/bash";
+	const escapedCmd = [cliPath, ...args].map(shellEscape).join(" ");
+	return {
+		command: userShell,
+		spawnArgs: ["-l", "-c", escapedCmd],
+	};
 }
 
 export class ClaudeRunner {
@@ -113,10 +127,13 @@ export class ClaudeRunner {
 		}
 
 		const args = buildArgs(options);
-		const child = spawn(options.settings.cliPath, args, {
+		const { command, spawnArgs } = buildSpawnCommand(
+			options.settings.cliPath,
+			args
+		);
+		const child = spawn(command, spawnArgs, {
 			cwd: options.vaultPath,
 			stdio: ["ignore", "pipe", "pipe"],
-			env: buildSpawnEnv(),
 		});
 
 		this.activeProcess = child;
