@@ -56,7 +56,7 @@ export class ClaudeVaultSettingTab extends PluginSettingTab {
 			.setDesc("Path to the Claude CLI executable.")
 			.addText((text) =>
 				text
-					.setPlaceholder("claude")
+					.setPlaceholder("Claude")
 					.setValue(this.plugin.settings.cliPath)
 					.onChange(async (value) => {
 						this.plugin.settings.cliPath = value;
@@ -109,7 +109,7 @@ export class ClaudeVaultSettingTab extends PluginSettingTab {
 			.setDesc("Override the default Claude model. Leave empty to use the CLI default.")
 			.addText((text) =>
 				text
-					.setPlaceholder("e.g. sonnet, opus, haiku")
+					.setPlaceholder("E.g. Sonnet, Opus, Haiku")
 					.setValue(this.plugin.settings.modelOverride)
 					.onChange(async (value) => {
 						this.plugin.settings.modelOverride = value;

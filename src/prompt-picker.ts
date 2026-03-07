@@ -80,7 +80,7 @@ export class PromptPickerModal extends SuggestModal<PromptFile> {
 		this.prompts = prompts;
 		this.readContent = readContent;
 		this.onSelect = onSelect;
-		this.overridesMap = overridesMap ?? new Map();
+		this.overridesMap = overridesMap ?? new Map<string, PromptOverrides>();
 		this.setPlaceholder(
 			prompts.length > 0
 				? "Select a prompt to run…"

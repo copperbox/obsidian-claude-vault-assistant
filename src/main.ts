@@ -95,7 +95,7 @@ export default class ClaudeVaultAssistant extends Plugin {
 	}
 
 	async loadSettings() {
-		const raw = await this.loadData();
+		const raw: unknown = await this.loadData();
 		if (raw && typeof raw === "object" && "settings" in raw) {
 			const data = raw as PluginData;
 			this.settings = parseSettings(data.settings);
@@ -134,7 +134,7 @@ export default class ClaudeVaultAssistant extends Plugin {
 	}
 
 	private async openPickerAndRun(scope: RunScope): Promise<void> {
-		const prompts = await scanPromptFiles(this.app.vault);
+		const prompts = scanPromptFiles(this.app.vault);
 		if (prompts.length === 0) {
 			new Notice("No PROMPT-*.md files found in vault root.");
 			return;
