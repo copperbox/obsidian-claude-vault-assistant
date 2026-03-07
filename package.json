@@ -1,6 +1,6 @@
 {
 	"name": "obsidian-claude-vault-assistant",
-	"version": "1.0.5",
+	"version": "1.0.6",
 	"description": "An Obsidian plugin that lets users define reusable prompt files and run them against their vault or active note using Claude Code CLI.",
 	"main": "main.js",
 	"type": "module",
