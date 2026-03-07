@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { PromptPickerModal, filterPrompts, formatOverrideBadges } from "../prompt-picker";
+import { PromptPickerModal, ScopePickerModal, filterPrompts, formatOverrideBadges } from "../prompt-picker";
 import type { PromptFile } from "../prompt-scanner";
 import type { PromptOverrides } from "../frontmatter";
 
@@ -135,6 +135,38 @@ describe("PromptPickerModal", () => {
 			tag: "span",
 			opts: { text: " [opus, 5 turns]", cls: "prompt-picker-overrides" },
 		});
+	});
+});
+
+describe("ScopePickerModal", () => {
+	it("shows only vault option when no active note", () => {
+		const modal = new ScopePickerModal({} as never, false, vi.fn());
+		const suggestions = modal.getSuggestions("");
+		expect(suggestions).toHaveLength(1);
+		expect(suggestions[0]!.scope).toBe("vault");
+	});
+
+	it("shows both options when active note exists", () => {
+		const modal = new ScopePickerModal({} as never, true, vi.fn());
+		const suggestions = modal.getSuggestions("");
+		expect(suggestions).toHaveLength(2);
+		expect(suggestions[0]!.scope).toBe("vault");
+		expect(suggestions[1]!.scope).toBe("note");
+	});
+
+	it("calls onSelect with chosen scope", () => {
+		const onSelect = vi.fn();
+		const modal = new ScopePickerModal({} as never, true, onSelect);
+		const suggestions = modal.getSuggestions("");
+		modal.onChooseSuggestion(suggestions[1]!);
+		expect(onSelect).toHaveBeenCalledWith("note");
+	});
+
+	it("filters suggestions by query", () => {
+		const modal = new ScopePickerModal({} as never, true, vi.fn());
+		const results = modal.getSuggestions("Active");
+		expect(results).toHaveLength(1);
+		expect(results[0]!.scope).toBe("note");
 	});
 });
 

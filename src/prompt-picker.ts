@@ -1,6 +1,59 @@
 import { type App, SuggestModal } from "obsidian";
+import type { RunScope } from "./claude-runner";
 import type { PromptFile } from "./prompt-scanner";
 import type { PromptOverrides } from "./frontmatter";
+
+interface ScopeOption {
+	scope: RunScope;
+	label: string;
+	description: string;
+}
+
+export class ScopePickerModal extends SuggestModal<ScopeOption> {
+	private options: ScopeOption[];
+	private onSelect: (scope: RunScope) => void;
+
+	constructor(
+		app: App,
+		hasActiveNote: boolean,
+		onSelect: (scope: RunScope) => void
+	) {
+		super(app);
+		this.onSelect = onSelect;
+		this.options = [
+			{
+				scope: "vault",
+				label: "Run on Vault",
+				description: "Claude can read and edit any file in the vault",
+			},
+		];
+		if (hasActiveNote) {
+			this.options.push({
+				scope: "note",
+				label: "Run on Active Note",
+				description: "Claude is constrained to the currently open note",
+			});
+		}
+		this.setPlaceholder("Choose scope…");
+	}
+
+	getSuggestions(query: string): ScopeOption[] {
+		if (!query) return this.options;
+		const lower = query.toLowerCase();
+		return this.options.filter((o) =>
+			o.label.toLowerCase().includes(lower)
+		);
+	}
+
+	renderSuggestion(option: ScopeOption, el: HTMLElement): void {
+		el.createEl("div", { text: option.label });
+		el.createEl("small", { text: option.description });
+	}
+
+	onChooseSuggestion(option: ScopeOption): void {
+		this.onSelect(option.scope);
+	}
+}
 
 export interface PromptPickerResult {
 	name: string;

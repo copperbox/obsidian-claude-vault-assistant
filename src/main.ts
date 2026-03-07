@@ -7,7 +7,7 @@ import {
 } from "./settings";
 import { ClaudeRunner, ClaudeRunnerError, type RunScope } from "./claude-runner";
 import { scanPromptFiles, readPromptContent } from "./prompt-scanner";
-import { PromptPickerModal } from "./prompt-picker";
+import { PromptPickerModal, ScopePickerModal } from "./prompt-picker";
 import { ClaudeOutputView, VIEW_TYPE_CLAUDE_OUTPUT } from "./output-view";
 import { StreamLineBuffer, parseStreamLine } from "./stream-parser";
 import { VaultRefresher } from "./vault-refresher";
@@ -41,7 +41,7 @@ export default class ClaudeVaultAssistant extends Plugin {
 		this.ribbonIconEl = this.addRibbonIcon(
 			"bot",
 			"Run Claude Prompt",
-			() => this.openPickerAndRun("vault")
+			() => this.openScopePickerAndRun()
 		);
 
 		this.addCommand({
@@ -121,6 +121,16 @@ export default class ClaudeVaultAssistant extends Plugin {
 			history: this.history,
 		};
 		await this.saveData(data);
+	}
+
+	private openScopePickerAndRun(): void {
+		const hasActiveNote = !!this.app.workspace.getActiveFile();
+		const picker = new ScopePickerModal(
+			this.app,
+			hasActiveNote,
+			(scope) => this.openPickerAndRun(scope)
+		);
+		picker.open();
 	}
 
 	private async openPickerAndRun(scope: RunScope): Promise<void> {
