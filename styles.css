@@ -118,6 +118,7 @@
 
 .claude-output-markdown {
 	margin-bottom: 4px;
+	white-space: normal;
 }
 
 .claude-output-markdown p {
