@@ -381,6 +381,26 @@
 	font-style: italic;
 }
 
+.adhoc-prompt-modal {
+	padding-bottom: 0;
+}
+
+.adhoc-prompt-textarea {
+	width: 100%;
+	min-height: 150px;
+	resize: vertical;
+	margin-bottom: 4px;
+	font-family: var(--font-interface);
+	font-size: var(--font-ui-small);
+}
+
+.adhoc-prompt-hint {
+	display: block;
+	color: var(--text-muted);
+	font-size: var(--font-smallest);
+	margin-bottom: 8px;
+}
+
 .prompt-picker-overrides {
 	color: var(--text-accent);
 	font-size: var(--font-smallest);

@@ -8,6 +8,7 @@ import {
 import { ClaudeRunner, ClaudeRunnerError, type RunScope } from "./claude-runner";
 import { scanPromptFiles, readPromptContent } from "./prompt-scanner";
 import { PromptPickerModal, ScopePickerModal } from "./prompt-picker";
+import { AdhocPromptModal } from "./adhoc-prompt-modal";
 import { ClaudeOutputView, VIEW_TYPE_CLAUDE_OUTPUT } from "./output-view";
 import { StreamLineBuffer, parseStreamLine } from "./stream-parser";
 import { VaultRefresher } from "./vault-refresher";
@@ -77,6 +78,12 @@ export default class ClaudeVaultAssistant extends Plugin {
 		});
 
 		this.addCommand({
+			id: "run-adhoc-prompt",
+			name: "Run ad-hoc Claude prompt",
+			callback: () => this.openAdhocPrompt(),
+		});
+
+		this.addCommand({
 			id: "open-output",
 			name: "Open Claude output",
 			callback: () => this.activateOutputView(),
@@ -129,6 +136,25 @@ export default class ClaudeVaultAssistant extends Plugin {
 			this.app,
 			hasActiveNote,
 			(scope) => { void this.openPickerAndRun(scope); }
+		);
+		picker.open();
+	}
+
+	private openAdhocPrompt(): void {
+		const hasActiveNote = !!this.app.workspace.getActiveFile();
+		const picker = new ScopePickerModal(
+			this.app,
+			hasActiveNote,
+			(scope) => {
+				const modal = new AdhocPromptModal(this.app, (promptText) => {
+					const name =
+						promptText.length > 40
+							? promptText.slice(0, 40) + "…"
+							: promptText;
+					void this.executeRun(scope, name, promptText);
+				});
+				modal.open();
+			}
 		);
 		picker.open();
 	}

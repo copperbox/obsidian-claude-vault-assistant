@@ -56,8 +56,15 @@ describe("ClaudeVaultAssistant command registration", () => {
 		expect(typeof ribbonIconArgs!.callback).toBe("function");
 	});
 
-	it("registers 4 commands", () => {
-		expect(registeredCommands).toHaveLength(4);
+	it("registers 5 commands", () => {
+		expect(registeredCommands).toHaveLength(5);
+	});
+
+	it("registers Run ad-hoc Claude prompt command", () => {
+		const cmd = registeredCommands.find((c) => c.id === "run-adhoc-prompt");
+		expect(cmd).toBeDefined();
+		expect(cmd!.name).toBe("Run ad-hoc Claude prompt");
+		expect(cmd!.callback).toBeDefined();
 	});
 
 	it("registers Run Claude Prompt (Vault) command", () => {
