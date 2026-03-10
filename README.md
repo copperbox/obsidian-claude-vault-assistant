@@ -85,11 +85,12 @@ You are an Obsidian note editor. Your job is to refine and improve the provided 
 
 ### Running prompts
 
-There are three ways to run a prompt:
+There are four ways to run a prompt:
 
 1. **Ribbon icon** — Click the bot icon in the left sidebar to open the prompt picker (vault scope)
 2. **Command palette** — Use `Run Claude Prompt (Vault)` to run against the entire vault
 3. **Command palette** — Use `Run Claude Prompt (Active Note)` to run scoped to the currently open note
+4. **Command palette** — Use `Run ad-hoc Claude prompt` to type a one-off prompt directly without creating a prompt file
 
 After selecting a prompt, Claude's output streams in real time into a sidebar pane. Tool calls (file reads, edits, etc.) are shown as collapsible sections beneath the output.
 
@@ -176,6 +177,7 @@ Configure the plugin in Obsidian Settings > Claude Vault Assistant:
 - **`src/prompt-scanner.ts`** — Scans vault root for PROMPT-*.md files
 - **`src/frontmatter.ts`** — Parses YAML frontmatter overrides from prompt files
 - **`src/prompt-picker.ts`** — Modal for selecting a prompt to run
+- **`src/adhoc-prompt-modal.ts`** — Modal for typing ad-hoc prompts
 - **`src/vault-refresher.ts`** — Refreshes modified files after a run
 
 ## Development

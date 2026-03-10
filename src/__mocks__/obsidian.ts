@@ -33,7 +33,31 @@ export class Setting {
 	addText = () => this;
 	addToggle = () => this;
 	addDropdown = () => this;
-	addTextArea = () => this;
+	addTextArea = (cb?: (ta: unknown) => void) => {
+		if (cb) {
+			const mockInput = createMockEl();
+			mockInput.rows = 0;
+			mockInput.setCssStyles = () => {};
+			const ta = {
+				setPlaceholder: () => ta,
+				onChange: () => ta,
+				inputEl: mockInput,
+			};
+			cb(ta);
+		}
+		return this;
+	};
+	addButton = (cb?: (btn: unknown) => void) => {
+		if (cb) {
+			const btn = {
+				setButtonText: () => btn,
+				setCta: () => btn,
+				onClick: () => btn,
+			};
+			cb(btn);
+		}
+		return this;
+	};
 }
 
 export class SuggestModal {
@@ -51,7 +75,7 @@ export class SuggestModal {
 
 export class Modal {
 	app: unknown;
-	contentEl = { empty: () => {}, setText: () => {}, createEl: () => ({}) };
+	contentEl = { empty: () => {}, setText: () => {}, createEl: () => createMockEl(), addClass: () => {} };
 	constructor(app: unknown) {
 		this.app = app;
 	}
@@ -72,6 +96,7 @@ function createMockEl(): Record<string, unknown> {
 		show: () => {},
 		hide: () => {},
 		addEventListener: (_event: string, _handler: () => void) => {},
+		focus: () => {},
 		closest: (_selector: string) => null,
 		getAttr: (_name: string) => null,
 		innerHTML: "",
