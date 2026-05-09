@@ -46,6 +46,12 @@ export class ClaudeOutputView extends ItemView {
 	private historyEntries: RunHistoryEntry[] = [];
 	private onClearHistory: (() => void) | null = null;
 
+	private toolCallEls: Map<string, {
+		summary: HTMLElement;
+		details: HTMLElement;
+		statusEl: HTMLElement;
+	}> = new Map();
+
 	constructor(leaf: WorkspaceLeaf) {
 		super(leaf);
 	}
@@ -251,6 +257,10 @@ export class ClaudeOutputView extends ItemView {
 		const statusText = `"${entry.promptName}" (${scopeLabel}) — ${formatTimestamp(entry.timestamp)}`;
 		this.showStatus(statusText);
 
+		if (entry.prompt) {
+			this.showHistoryPrompt(entry.prompt);
+		}
+
 		if (entry.output) {
 			this.appendText(entry.output);
 			this.flushRender();
@@ -259,6 +269,21 @@ export class ClaudeOutputView extends ItemView {
 		if (entry.costUsd !== undefined || entry.durationMs) {
 			this.showResult(entry.costUsd, entry.durationMs);
 		}
+	}
+
+	private showHistoryPrompt(prompt: string): void {
+		if (!this.outputEl) return;
+		const details = this.outputEl.createEl("details", {
+			cls: "claude-history-prompt",
+		});
+		details.createEl("summary", {
+			text: "Prompt",
+			cls: "claude-history-prompt-summary",
+		});
+		details.createEl("pre", {
+			text: prompt,
+			cls: "claude-history-prompt-body",
+		});
 	}
 
 	private renderStatus(status: RunStatus): void {
@@ -297,6 +322,7 @@ export class ClaudeOutputView extends ItemView {
 		}
 		this.markdownEl = null;
 		this.markdownContent = "";
+		this.toolCallEls.clear();
 	}
 
 	showStatus(message: string): void {
@@ -322,7 +348,12 @@ export class ClaudeOutputView extends ItemView {
 		this.scheduleRender();
 	}
 
-	showToolUse(toolName: string, filePath?: string, input?: Record<string, unknown>): void {
+	showToolUse(
+		toolName: string,
+		filePath?: string,
+		input?: Record<string, unknown>,
+		toolUseId?: string
+	): void {
 		if (!this.outputEl) return;
 		this.flushRender();
 		this.markdownEl = null;
@@ -335,6 +366,13 @@ export class ClaudeOutputView extends ItemView {
 		const summary = details.createEl("summary", {
 			cls: "claude-tool-call-summary",
 		});
+
+		const statusEl = summary.createEl("span", {
+			cls: "claude-tool-call-status claude-tool-call-status-pending",
+			text: "…",
+		});
+		statusEl.setAttr("aria-label", "pending");
+
 		summary.createEl("span", {
 			text: toolName,
 			cls: "claude-tool-call-name",
@@ -354,6 +392,42 @@ export class ClaudeOutputView extends ItemView {
 			});
 		}
 
+		if (toolUseId) {
+			this.toolCallEls.set(toolUseId, { summary, details, statusEl });
+		}
+
+		this.scrollToBottom();
+	}
+
+	showToolResult(toolUseId: string, isError: boolean, content: string): void {
+		const entry = this.toolCallEls.get(toolUseId);
+		if (!entry) return;
+
+		const { summary, details, statusEl } = entry;
+
+		statusEl.removeClass("claude-tool-call-status-pending");
+		if (isError) {
+			statusEl.addClass("claude-tool-call-status-error");
+			statusEl.setText("✗");
+			statusEl.setAttr("aria-label", "error");
+			summary.addClass("claude-tool-call-summary-error");
+			details.setAttr("open", "");
+		} else {
+			statusEl.addClass("claude-tool-call-status-success");
+			statusEl.setText("✓");
+			statusEl.setAttr("aria-label", "success");
+		}
+
+		if (content) {
+			const resultEl = details.createDiv({
+				cls: isError
+					? "claude-tool-call-result claude-tool-call-result-error"
+					: "claude-tool-call-result",
+			});
+			resultEl.createEl("pre", { text: content });
+		}
+
+		this.toolCallEls.delete(toolUseId);
 		this.scrollToBottom();
 	}
 

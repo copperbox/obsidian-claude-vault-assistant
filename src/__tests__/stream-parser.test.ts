@@ -52,9 +52,24 @@ describe("parseStreamLine", () => {
 		});
 		expect(parseStreamLine(line)).toEqual({
 			type: "tool_use",
+			id: undefined,
 			name: "Read",
 			filePath: undefined,
 			input: { path: "foo.md" },
+		});
+	});
+
+	it("parses tool_use id when present", () => {
+		const line = JSON.stringify({
+			type: "assistant",
+			message: {
+				content: [{ type: "tool_use", id: "toolu_abc", name: "Read", input: { path: "foo.md" } }],
+			},
+		});
+		expect(parseStreamLine(line)).toMatchObject({
+			type: "tool_use",
+			id: "toolu_abc",
+			name: "Read",
 		});
 	});
 
@@ -101,10 +116,92 @@ describe("parseStreamLine", () => {
 		});
 		expect(parseStreamLine(line)).toEqual({
 			type: "tool_use",
+			id: undefined,
 			name: "Grep",
 			filePath: undefined,
 			input: undefined,
 		});
+	});
+
+	it("parses tool_result success from user event with string content", () => {
+		const line = JSON.stringify({
+			type: "user",
+			message: {
+				content: [
+					{
+						type: "tool_result",
+						tool_use_id: "toolu_abc",
+						content: "file contents",
+					},
+				],
+			},
+		});
+		expect(parseStreamLine(line)).toEqual({
+			type: "tool_result",
+			toolUseId: "toolu_abc",
+			isError: false,
+			content: "file contents",
+		});
+	});
+
+	it("parses tool_result error from user event", () => {
+		const line = JSON.stringify({
+			type: "user",
+			message: {
+				content: [
+					{
+						type: "tool_result",
+						tool_use_id: "toolu_xyz",
+						is_error: true,
+						content: "File not found",
+					},
+				],
+			},
+		});
+		expect(parseStreamLine(line)).toEqual({
+			type: "tool_result",
+			toolUseId: "toolu_xyz",
+			isError: true,
+			content: "File not found",
+		});
+	});
+
+	it("parses tool_result with array content blocks", () => {
+		const line = JSON.stringify({
+			type: "user",
+			message: {
+				content: [
+					{
+						type: "tool_result",
+						tool_use_id: "toolu_arr",
+						content: [
+							{ type: "text", text: "line1" },
+							{ type: "text", text: "line2" },
+						],
+					},
+				],
+			},
+		});
+		expect(parseStreamLine(line)).toEqual({
+			type: "tool_result",
+			toolUseId: "toolu_arr",
+			isError: false,
+			content: "line1\nline2",
+		});
+	});
+
+	it("returns null for user event without tool_result block", () => {
+		const line = JSON.stringify({
+			type: "user",
+			message: {
+				content: [{ type: "text", text: "hi" }],
+			},
+		});
+		expect(parseStreamLine(line)).toBeNull();
+	});
+
+	it("returns null for user event with no content", () => {
+		expect(parseStreamLine('{"type":"user","message":{"content":[]}}')).toBeNull();
 	});
 
 	it("returns null for assistant with empty content", () => {

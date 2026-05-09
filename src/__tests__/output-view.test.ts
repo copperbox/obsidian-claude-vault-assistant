@@ -188,6 +188,29 @@ describe("ClaudeOutputView", () => {
 			// Should not throw
 		});
 
+		it("showToolUse accepts toolUseId", () => {
+			view.showToolUse("Read", "foo.md", { file_path: "foo.md" }, "toolu_1");
+			// Should not throw
+		});
+
+		it("showToolResult is a no-op for unknown id", () => {
+			view.showToolResult("toolu_unknown", false, "result");
+			// Should not throw
+		});
+
+		it("showToolResult updates a tracked tool call (success)", () => {
+			view.showToolUse("Read", "foo.md", { file_path: "foo.md" }, "toolu_42");
+			view.showToolResult("toolu_42", false, "ok");
+			// Should not throw and should remove from tracking
+			view.showToolResult("toolu_42", false, "ok again");
+		});
+
+		it("showToolResult updates a tracked tool call (error)", () => {
+			view.showToolUse("Read", "missing.md", { file_path: "missing.md" }, "toolu_err");
+			view.showToolResult("toolu_err", true, "File not found");
+			// Should not throw
+		});
+
 		it("clears state on clear()", () => {
 			view.appendText("will be cleared");
 			view.clear();
@@ -310,6 +333,15 @@ describe("ClaudeOutputView", () => {
 				status: "error",
 				costUsd: 0.05,
 				notePath: "notes/test.md",
+			});
+			view.setHistory([entry]);
+			// Should not throw
+		});
+
+		it("handles history entries with stored ad-hoc prompt", () => {
+			const entry = makeHistoryEntry({
+				promptName: "ad-hoc preview…",
+				prompt: "full ad-hoc prompt body",
 			});
 			view.setHistory([entry]);
 			// Should not throw
