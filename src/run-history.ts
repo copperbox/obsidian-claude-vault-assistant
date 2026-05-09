@@ -10,6 +10,7 @@ export interface RunHistoryEntry {
 	costUsd?: number;
 	notePath?: string;
 	output: string;
+	prompt?: string;
 }
 
 export function generateEntryId(): string {

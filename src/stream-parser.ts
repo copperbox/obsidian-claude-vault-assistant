@@ -5,9 +5,17 @@ export interface ParsedText {
 
 export interface ParsedToolUse {
 	type: "tool_use";
+	id?: string;
 	name: string;
 	filePath?: string;
 	input?: Record<string, unknown>;
+}
+
+export interface ParsedToolResult {
+	type: "tool_result";
+	toolUseId: string;
+	isError: boolean;
+	content: string;
 }
 
 export interface ParsedResult {
@@ -18,7 +26,7 @@ export interface ParsedResult {
 	stopReason?: string;
 }
 
-export type ParsedEvent = ParsedText | ParsedToolUse | ParsedResult;
+export type ParsedEvent = ParsedText | ParsedToolUse | ParsedToolResult | ParsedResult;
 
 export function parseStreamLine(line: string): ParsedEvent | null {
 	if (!line.trim()) return null;
@@ -34,6 +42,10 @@ export function parseStreamLine(line: string): ParsedEvent | null {
 
 	if (type === "assistant") {
 		return parseAssistantEvent(data);
+	}
+
+	if (type === "user") {
+		return parseUserEvent(data);
 	}
 
 	if (type === "result") {
@@ -67,11 +79,48 @@ function parseAssistantEvent(data: Record<string, unknown>): ParsedEvent | null 
 			const filePath = input && typeof input["file_path"] === "string"
 				? input["file_path"]
 				: undefined;
-			return { type: "tool_use", name, filePath, input };
+			const id = typeof lastBlock["id"] === "string" ? lastBlock["id"] : undefined;
+			return { type: "tool_use", id, name, filePath, input };
 		}
 	}
 
 	return null;
+}
+
+function parseUserEvent(data: Record<string, unknown>): ParsedToolResult | null {
+	const message = data["message"] as Record<string, unknown> | undefined;
+	if (!message) return null;
+
+	const content = message["content"] as unknown[] | undefined;
+	if (!Array.isArray(content) || content.length === 0) return null;
+
+	for (const block of content) {
+		const b = block as Record<string, unknown>;
+		if (b["type"] !== "tool_result") continue;
+		const toolUseId = b["tool_use_id"];
+		if (typeof toolUseId !== "string") continue;
+		const isError = b["is_error"] === true;
+		const rawContent = b["content"];
+		const text = stringifyToolResultContent(rawContent);
+		return { type: "tool_result", toolUseId, isError, content: text };
+	}
+
+	return null;
+}
+
+function stringifyToolResultContent(raw: unknown): string {
+	if (typeof raw === "string") return raw;
+	if (Array.isArray(raw)) {
+		const parts: string[] = [];
+		for (const item of raw) {
+			const b = item as Record<string, unknown>;
+			if (b && b["type"] === "text" && typeof b["text"] === "string") {
+				parts.push(b["text"]);
+			}
+		}
+		return parts.join("\n");
+	}
+	return "";
 }
 
 function parseResultEvent(data: Record<string, unknown>): ParsedResult | null {

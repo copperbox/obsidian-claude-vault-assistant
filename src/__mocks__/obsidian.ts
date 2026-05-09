@@ -99,6 +99,7 @@ function createMockEl(): Record<string, unknown> {
 		focus: () => {},
 		closest: (_selector: string) => null,
 		getAttr: (_name: string) => null,
+		setAttr: (_name: string, _value: string) => {},
 		innerHTML: "",
 		scrollTop: 0,
 		scrollHeight: 0,

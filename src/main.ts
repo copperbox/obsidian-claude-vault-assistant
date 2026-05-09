@@ -151,7 +151,7 @@ export default class ClaudeVaultAssistant extends Plugin {
 						promptText.length > 40
 							? promptText.slice(0, 40) + "…"
 							: promptText;
-					void this.executeRun(scope, name, promptText);
+					void this.executeRun(scope, name, promptText, promptText);
 				});
 				modal.open();
 			}
@@ -195,7 +195,8 @@ export default class ClaudeVaultAssistant extends Plugin {
 	private async executeRun(
 		scope: RunScope,
 		promptName: string,
-		rawPromptContent: string
+		rawPromptContent: string,
+		adhocPrompt?: string
 	): Promise<void> {
 		const view = await this.activateOutputView();
 		if (!view) {
@@ -269,10 +270,16 @@ export default class ClaudeVaultAssistant extends Plugin {
 					case "text":
 						view.appendText(event.text);
 						accumulatedOutput += event.text;
+						if (!event.text.endsWith("\n")) {
+							accumulatedOutput += "\n\n";
+						}
 						break;
 					case "tool_use":
-						view.showToolUse(event.name, event.filePath, event.input);
+						view.showToolUse(event.name, event.filePath, event.input, event.id);
 						refresher.trackToolUse(event.name, event.filePath);
+						break;
+					case "tool_result":
+						view.showToolResult(event.toolUseId, event.isError, event.content);
 						break;
 					case "result":
 						lastStopReason = event.stopReason;
@@ -334,6 +341,7 @@ export default class ClaudeVaultAssistant extends Plugin {
 					costUsd: lastCostUsd,
 					notePath: activeNotePath,
 					output: accumulatedOutput,
+					...(adhocPrompt !== undefined ? { prompt: adhocPrompt } : {}),
 				};
 				this.history = addEntry(
 					this.history,

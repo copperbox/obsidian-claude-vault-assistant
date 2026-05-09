@@ -92,7 +92,7 @@ There are four ways to run a prompt:
 3. **Command palette** — Use `Run Claude Prompt (Active Note)` to run scoped to the currently open note
 4. **Command palette** — Use `Run ad-hoc Claude prompt` to type a one-off prompt directly without creating a prompt file
 
-After selecting a prompt, Claude's output streams in real time into a sidebar pane. Tool calls (file reads, edits, etc.) are shown as collapsible sections beneath the output.
+After selecting a prompt, Claude's output streams in real time into a sidebar pane. Tool calls (file reads, edits, etc.) are shown as collapsible sections beneath the output, each with a status badge (✓ success, ✗ error) once the result returns.
 
 ### Stopping a run
 
@@ -104,7 +104,7 @@ After selecting a prompt, Claude's output streams in real time into a sidebar pa
 Use `Open Claude Output` from the command palette to open the output pane at any time. It has two tabs:
 
 - **Output** — Live-streamed markdown output from the current or most recent run, with status indicators (Idle / Running / Complete / Error / Stopped / Limit Reached)
-- **History** — A log of past runs showing prompt name, scope, timestamp, duration, status, and cost. Click any entry to review its cached output. Use the **Clear History** button to remove all entries.
+- **History** — A log of past runs showing prompt name, scope, timestamp, duration, status, and cost. Click any entry to review its cached output. Ad-hoc runs include the full prompt text in a collapsible **Prompt** section above the replay; runs from `PROMPT-*.md` files show only the file name. Use the **Clear History** button to remove all entries.
 
 ### CLAUDE.md support
 
