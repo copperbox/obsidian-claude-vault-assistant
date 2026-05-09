@@ -270,6 +270,9 @@ export default class ClaudeVaultAssistant extends Plugin {
 					case "text":
 						view.appendText(event.text);
 						accumulatedOutput += event.text;
+						if (!event.text.endsWith("\n")) {
+							accumulatedOutput += "\n\n";
+						}
 						break;
 					case "tool_use":
 						view.showToolUse(event.name, event.filePath, event.input, event.id);
