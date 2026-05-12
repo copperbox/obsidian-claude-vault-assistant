@@ -11,13 +11,7 @@ An Obsidian plugin that lets you define reusable prompt files (`PROMPT-*.md`) an
 
 ## Installation
 
-1. Go to the [latest release](https://github.com/copperbox/obsidian-claude-vault-assistant/releases/latest)
-2. Download `main.js`, `manifest.json`, and `styles.css`
-3. Create a folder called `claude-vault-assistant` inside your vault's `.obsidian/plugins/` directory
-4. Copy the downloaded files into that folder
-5. Enable the plugin in Obsidian Settings > Community Plugins
-
-> Currently have an [open PR](https://github.com/obsidianmd/obsidian-releases/pull/10801) to get plugin added to the official community plugins list for one click installation.
+Now available thru the [Obsidian Community](https://community.obsidian.md/plugins/claude-vault-assistant) site.
 
 ## Usage
 
