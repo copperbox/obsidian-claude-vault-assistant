@@ -26,7 +26,7 @@ export class AdhocPromptModal extends Modal {
 				this.submit();
 			}
 		});
-		activeWindow.setTimeout(() => textarea.focus(), 10);
+		window.setTimeout(() => textarea.focus(), 10);
 
 		contentEl.createEl("small", {
 			text: "Ctrl+Enter to submit",
