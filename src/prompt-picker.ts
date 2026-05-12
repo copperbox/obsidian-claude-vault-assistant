@@ -46,7 +46,7 @@ export class ScopePickerModal extends SuggestModal<ScopeOption> {
 	}
 
 	renderSuggestion(option: ScopeOption, el: HTMLElement): void {
-		el.createEl("div", { text: option.label });
+		el.createDiv({ text: option.label });
 		el.createEl("small", { text: option.description });
 	}
 
@@ -97,10 +97,10 @@ export class PromptPickerModal extends SuggestModal<PromptFile> {
 	}
 
 	renderSuggestion(prompt: PromptFile, el: HTMLElement): void {
-		const titleEl = el.createEl("div", { text: prompt.name });
+		const titleEl = el.createDiv({ text: prompt.name });
 		const overrides = this.overridesMap.get(prompt.path);
 		if (overrides && Object.keys(overrides).length > 0) {
-			titleEl.createEl("span", {
+			titleEl.createSpan({
 				text: formatOverrideBadges(overrides),
 				cls: "prompt-picker-overrides",
 			});

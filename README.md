@@ -6,7 +6,7 @@ An Obsidian plugin that lets you define reusable prompt files (`PROMPT-*.md`) an
 
 ## Prerequisites
 
-- [Obsidian](https://obsidian.md/) v0.15.0+
+- [Obsidian](https://obsidian.md/) v1.7.2+
 - [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) installed and authenticated
 
 ## Installation
