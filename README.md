@@ -4,6 +4,22 @@ Run pre-defined claude prompts against your obsidian vault, within obsidan itsel
 
 An Obsidian plugin that lets you define reusable prompt files (`PROMPT-*.md`) and run them against your vault or the currently active note using the Claude Code CLI in headless mode.
 
+## ⚠️ Security & Trust Model — Read This First
+
+**This plugin works by spawning the Claude Code CLI as a local shell process on your machine.** Prompts you write — including ad-hoc prompts, `PROMPT-*.md` files, and your `CLAUDE.md` — are passed to the CLI, which then drives an agentic loop that can read, write, and edit files in your vault (and run other tools you explicitly allow). You are giving an LLM the ability to take actions on your system. Treat that seriously.
+
+Things you should understand before using this plugin:
+
+- **The plugin invokes a real shell process.** On macOS/Linux it spawns through your login shell (`$SHELL -l -c …`) so your normal environment (PATH, API tokens, shell rc files) is in scope. On Windows it invokes the CLI executable directly. Arguments are properly escaped — a prompt cannot inject shell commands at the spawn boundary — but the CLI itself still runs with your full user permissions.
+- **Whatever you put in `Allowed tools` is what Claude can do.** The default allowlist (`Read, Grep, Glob, Write, Edit`) is scoped to file I/O inside the vault. If you add `Bash` (or any other tool that executes code), Claude can run arbitrary commands on your machine during a run. Only do this if you understand the consequences.
+- **Prompt injection from note content is a real risk.** Claude reads the notes you point it at. If your vault contains untrusted content — clipped web pages, pasted emails, shared notes, anything you didn't author — that content can contain instructions that the model may follow. With a permissive tool allowlist this becomes a path to unintended file edits or command execution. Audit what's in your vault before running broad prompts over it.
+- **The `CLI path` setting is not sandboxed.** It's the executable the plugin runs. Don't point it at anything you wouldn't otherwise execute. Leave it as `claude` unless you have a specific reason to change it.
+- **`CLAUDE.md` is sent as a system prompt on every run.** Anything in that file shapes the model's behavior across all prompts. Don't paste untrusted content into it.
+- **Runs are not sandboxed to the active note.** "Note scope" adds an instruction asking the model to only edit the active note — it's a guideline, not an enforced boundary. With `Write`/`Edit` allowed, the model technically has access to the whole vault.
+- **Set a `Max budget (USD)` and `Max turns`.** A prompt that loops or fans out can cost real money. The defaults cap turns at 50; there is no default budget cap.
+
+In short: only run prompts you wrote (or have read), only enable tools you understand, and assume the model will occasionally do something you didn't intend. Review changes (git, file history, Obsidian's file recovery) after broad runs.
+
 ## Prerequisites
 
 - [Obsidian](https://obsidian.md/) v1.7.2+
