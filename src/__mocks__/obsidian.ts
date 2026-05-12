@@ -118,6 +118,12 @@ if (!globalScope.activeWindow) {
 		clearTimeout: (id: number) => clearTimeout(id as unknown as ReturnType<typeof setTimeout>),
 	};
 }
+if (!globalScope.window) {
+	globalScope.window = {
+		setTimeout: (cb: () => void, ms?: number) => setTimeout(cb, ms) as unknown as number,
+		clearTimeout: (id: number) => clearTimeout(id as unknown as ReturnType<typeof setTimeout>),
+	};
+}
 if (!globalScope.activeDocument) {
 	globalScope.activeDocument = { hasFocus: () => true };
 }

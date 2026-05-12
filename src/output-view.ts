@@ -121,7 +121,7 @@ export class ClaudeOutputView extends ItemView {
 
 	onClose(): Promise<void> {
 		if (this.renderTimer) {
-			activeWindow.clearTimeout(this.renderTimer);
+			window.clearTimeout(this.renderTimer);
 			this.renderTimer = null;
 		}
 		this.outputEl = null;
@@ -317,7 +317,7 @@ export class ClaudeOutputView extends ItemView {
 			this.errorEl.empty();
 		}
 		if (this.renderTimer) {
-			activeWindow.clearTimeout(this.renderTimer);
+			window.clearTimeout(this.renderTimer);
 			this.renderTimer = null;
 		}
 		this.markdownEl = null;
@@ -490,7 +490,7 @@ export class ClaudeOutputView extends ItemView {
 
 	private scheduleRender(): void {
 		if (this.renderTimer) return;
-		this.renderTimer = activeWindow.setTimeout(() => {
+		this.renderTimer = window.setTimeout(() => {
 			this.renderTimer = null;
 			this.renderMarkdown();
 		}, RENDER_DEBOUNCE_MS);
@@ -498,7 +498,7 @@ export class ClaudeOutputView extends ItemView {
 
 	private flushRender(): void {
 		if (this.renderTimer) {
-			activeWindow.clearTimeout(this.renderTimer);
+			window.clearTimeout(this.renderTimer);
 			this.renderTimer = null;
 			this.renderMarkdown();
 		}

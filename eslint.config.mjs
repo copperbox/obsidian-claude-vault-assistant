@@ -19,6 +19,7 @@ export default defineConfig([
 				clearTimeout: "readonly",
 				activeWindow: "readonly",
 				activeDocument: "readonly",
+				window: "readonly",
 				Buffer: "readonly",
 				process: "readonly",
 				NodeJS: "readonly",
