@@ -5,10 +5,10 @@ import { DEFAULT_BRANDS } from "eslint-plugin-obsidianmd/dist/lib/rules/ui/brand
 import { DEFAULT_ACRONYMS } from "eslint-plugin-obsidianmd/dist/lib/rules/ui/acronyms.js";
 
 export default defineConfig([
+	{ ignores: ["src/__tests__/**", "src/__mocks__/**"] },
 	...obsidianmd.configs.recommended,
 	{
 		files: ["src/**/*.ts"],
-		ignores: ["src/__tests__/**"],
 		languageOptions: {
 			parser: tsparser,
 			parserOptions: { project: "./tsconfig.json" },
@@ -17,6 +17,8 @@ export default defineConfig([
 				document: "readonly",
 				setTimeout: "readonly",
 				clearTimeout: "readonly",
+				activeWindow: "readonly",
+				activeDocument: "readonly",
 				Buffer: "readonly",
 				process: "readonly",
 				NodeJS: "readonly",
