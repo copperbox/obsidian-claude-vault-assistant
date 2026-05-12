@@ -75,7 +75,7 @@ export class SuggestModal {
 
 export class Modal {
 	app: unknown;
-	contentEl = { empty: () => {}, setText: () => {}, createEl: () => createMockEl(), addClass: () => {} };
+	contentEl = createMockEl();
 	constructor(app: unknown) {
 		this.app = app;
 	}
@@ -90,6 +90,7 @@ function createMockEl(): Record<string, unknown> {
 		empty: () => {},
 		createEl: (_tag: string, _opts?: Record<string, unknown>) => createMockEl(),
 		createDiv: (_opts?: Record<string, unknown>) => createMockEl(),
+		createSpan: (_opts?: Record<string, unknown>) => createMockEl(),
 		addClass: (_cls: string) => {},
 		removeClass: (_cls: string) => {},
 		setText: (_text: string) => {},
@@ -107,6 +108,18 @@ function createMockEl(): Record<string, unknown> {
 		className: "",
 	};
 	return el;
+}
+
+// Obsidian global polyfills for popout-window helpers
+const globalScope = globalThis as Record<string, unknown>;
+if (!globalScope.activeWindow) {
+	globalScope.activeWindow = {
+		setTimeout: (cb: () => void, ms?: number) => setTimeout(cb, ms) as unknown as number,
+		clearTimeout: (id: number) => clearTimeout(id as unknown as ReturnType<typeof setTimeout>),
+	};
+}
+if (!globalScope.activeDocument) {
+	globalScope.activeDocument = { hasFocus: () => true };
 }
 
 export class WorkspaceLeaf {

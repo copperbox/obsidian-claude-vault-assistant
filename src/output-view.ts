@@ -30,7 +30,7 @@ export class ClaudeOutputView extends ItemView {
 	private errorEl: HTMLElement | null = null;
 	private markdownEl: HTMLElement | null = null;
 	private markdownContent = "";
-	private renderTimer: ReturnType<typeof setTimeout> | null = null;
+	private renderTimer: number | null = null;
 	private headerEl: HTMLElement | null = null;
 	private statusEl: HTMLElement | null = null;
 	private stopBtn: HTMLElement | null = null;
@@ -74,7 +74,7 @@ export class ClaudeOutputView extends ItemView {
 		container.addClass("claude-output-container");
 
 		this.headerEl = container.createDiv({ cls: "claude-output-header" });
-		this.statusEl = this.headerEl.createEl("span", {
+		this.statusEl = this.headerEl.createSpan({
 			cls: "claude-output-status-badge",
 		});
 		this.stopBtn = this.headerEl.createEl("button", {
@@ -121,7 +121,7 @@ export class ClaudeOutputView extends ItemView {
 
 	onClose(): Promise<void> {
 		if (this.renderTimer) {
-			clearTimeout(this.renderTimer);
+			activeWindow.clearTimeout(this.renderTimer);
 			this.renderTimer = null;
 		}
 		this.outputEl = null;
@@ -212,11 +212,11 @@ export class ClaudeOutputView extends ItemView {
 			const item = list.createDiv({ cls: "claude-history-item" });
 
 			const header = item.createDiv({ cls: "claude-history-item-header" });
-			header.createEl("span", {
+			header.createSpan({
 				text: entry.promptName,
 				cls: "claude-history-item-name",
 			});
-			header.createEl("span", {
+			header.createSpan({
 				text: entry.scope === "note" ? "Note" : "Vault",
 				cls: `claude-history-item-scope claude-scope-${entry.scope}`,
 			});
@@ -227,18 +227,18 @@ export class ClaudeOutputView extends ItemView {
 			if (entry.costUsd !== undefined) {
 				parts.push(`$${entry.costUsd.toFixed(4)}`);
 			}
-			meta.createEl("span", {
+			meta.createSpan({
 				text: parts.join(" · "),
 				cls: "claude-history-item-info",
 			});
 			if (entry.notePath) {
-				meta.createEl("span", {
+				meta.createSpan({
 					text: entry.notePath,
 					cls: "claude-history-item-note",
 				});
 			}
 
-			header.createEl("span", {
+			header.createSpan({
 				text: entry.status,
 				cls: `claude-history-item-status claude-history-status-${entry.status}`,
 			});
@@ -317,7 +317,7 @@ export class ClaudeOutputView extends ItemView {
 			this.errorEl.empty();
 		}
 		if (this.renderTimer) {
-			clearTimeout(this.renderTimer);
+			activeWindow.clearTimeout(this.renderTimer);
 			this.renderTimer = null;
 		}
 		this.markdownEl = null;
@@ -367,18 +367,18 @@ export class ClaudeOutputView extends ItemView {
 			cls: "claude-tool-call-summary",
 		});
 
-		const statusEl = summary.createEl("span", {
+		const statusEl = summary.createSpan({
 			cls: "claude-tool-call-status claude-tool-call-status-pending",
 			text: "…",
 		});
 		statusEl.setAttr("aria-label", "pending");
 
-		summary.createEl("span", {
+		summary.createSpan({
 			text: toolName,
 			cls: "claude-tool-call-name",
 		});
 		if (filePath) {
-			summary.createEl("span", {
+			summary.createSpan({
 				text: filePath,
 				cls: "claude-tool-call-path",
 			});
@@ -461,7 +461,7 @@ export class ClaudeOutputView extends ItemView {
 			const parts: string[] = [];
 			if (costUsd !== undefined) parts.push(`$${costUsd.toFixed(4)}`);
 			if (durationMs !== undefined) parts.push(`${(durationMs / 1000).toFixed(1)}s`);
-			this.outputEl.createEl("div", {
+			this.outputEl.createDiv({
 				text: parts.join(" · "),
 				cls: "claude-output-stats",
 			});
@@ -480,7 +480,7 @@ export class ClaudeOutputView extends ItemView {
 		if (!this.outputEl) return;
 		this.flushRender();
 		if (code !== null && code !== 0) {
-			this.outputEl.createEl("div", {
+			this.outputEl.createDiv({
 				text: `\nProcess exited with code ${code}`,
 				cls: "claude-output-exit-error",
 			});
@@ -490,7 +490,7 @@ export class ClaudeOutputView extends ItemView {
 
 	private scheduleRender(): void {
 		if (this.renderTimer) return;
-		this.renderTimer = setTimeout(() => {
+		this.renderTimer = activeWindow.setTimeout(() => {
 			this.renderTimer = null;
 			this.renderMarkdown();
 		}, RENDER_DEBOUNCE_MS);
@@ -498,7 +498,7 @@ export class ClaudeOutputView extends ItemView {
 
 	private flushRender(): void {
 		if (this.renderTimer) {
-			clearTimeout(this.renderTimer);
+			activeWindow.clearTimeout(this.renderTimer);
 			this.renderTimer = null;
 			this.renderMarkdown();
 		}

@@ -379,7 +379,7 @@ export default class ClaudeVaultAssistant extends Plugin {
 		new Notice(message);
 
 		// System notification when Obsidian is not focused
-		if (!document.hasFocus() && typeof Notification !== "undefined") {
+		if (!activeDocument.hasFocus() && typeof Notification !== "undefined") {
 			try {
 				new Notification("Claude Vault Assistant", { body: message });
 			} catch {

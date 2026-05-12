@@ -84,11 +84,15 @@ describe("PromptPickerModal", () => {
 
 		const createdEls: { tag: string; opts: Record<string, unknown> }[] = [];
 		const mockInner = {
-			createEl: (tag: string, opts: Record<string, unknown>) => {
-				createdEls.push({ tag, opts });
+			createSpan: (opts: Record<string, unknown>) => {
+				createdEls.push({ tag: "span", opts });
 			},
 		};
 		const el = {
+			createDiv: (opts: Record<string, unknown>) => {
+				createdEls.push({ tag: "div", opts });
+				return mockInner;
+			},
 			createEl: (tag: string, opts: Record<string, unknown>) => {
 				createdEls.push({ tag, opts });
 				return mockInner;
@@ -117,11 +121,15 @@ describe("PromptPickerModal", () => {
 
 		const createdEls: { tag: string; opts: Record<string, unknown> }[] = [];
 		const mockInner = {
-			createEl: (tag: string, opts: Record<string, unknown>) => {
-				createdEls.push({ tag, opts });
+			createSpan: (opts: Record<string, unknown>) => {
+				createdEls.push({ tag: "span", opts });
 			},
 		};
 		const el = {
+			createDiv: (opts: Record<string, unknown>) => {
+				createdEls.push({ tag: "div", opts });
+				return mockInner;
+			},
 			createEl: (tag: string, opts: Record<string, unknown>) => {
 				createdEls.push({ tag, opts });
 				return mockInner;
