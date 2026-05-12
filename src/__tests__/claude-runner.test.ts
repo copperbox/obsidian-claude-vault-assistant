@@ -282,9 +282,13 @@ describe("ClaudeRunner", () => {
 		const opts = makeOptions();
 		runner.run(opts);
 
+		const { command, spawnArgs } = buildSpawnCommand(
+			opts.settings.cliPath,
+			buildArgs(opts)
+		);
 		expect(spawn).toHaveBeenCalledWith(
-			"claude",
-			expect.arrayContaining(["-p", "--output-format", "stream-json"]),
+			command,
+			spawnArgs,
 			expect.objectContaining({ cwd: "/test/vault" })
 		);
 	});
