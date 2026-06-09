@@ -11,7 +11,7 @@ const css = readFileSync(
 function ruleBody(selector: string): string {
 	const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 	const match = css.match(new RegExp(`${escaped}\\s*\\{([^}]*)\\}`));
-	return match ? match[1] : "";
+	return match?.[1] ?? "";
 }
 
 describe("styles.css text selection", () => {
