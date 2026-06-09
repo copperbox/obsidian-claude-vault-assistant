@@ -114,6 +114,11 @@
 	white-space: pre-wrap;
 	word-wrap: break-word;
 	line-height: 1.5;
+	/* Obsidian disables text selection in plugin views by default; opt back in
+	   so output can be selected and copied (e.g. for debugging). Inherited by
+	   all child content (markdown, tool-call output, results). */
+	user-select: text;
+	-webkit-user-select: text;
 }
 
 .claude-output-markdown {
@@ -329,6 +334,8 @@
 	border-radius: 4px;
 	margin: 8px 12px;
 	font-size: var(--font-ui-small);
+	user-select: text;
+	-webkit-user-select: text;
 }
 
 .claude-output-exit-error {
