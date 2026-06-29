@@ -16,6 +16,7 @@ import {
 } from "./permission-card";
 import type { PermissionDecision, PermissionRequest } from "./permission-types";
 import { labelCodeBlocks } from "./code-block";
+import { WorkingIndicator } from "./working-indicator";
 
 export const VIEW_TYPE_CLAUDE_OUTPUT = "claude-vault-output";
 
@@ -60,6 +61,7 @@ export class ClaudeOutputView extends ItemView {
 
 	private toolCallEls: Map<string, ToolCallEls> = new Map();
 	private pendingCards: Set<PermissionCardHandle> = new Set();
+	private workingIndicator: WorkingIndicator | null = null;
 
 	constructor(leaf: WorkspaceLeaf) {
 		super(leaf);
@@ -131,6 +133,7 @@ export class ClaudeOutputView extends ItemView {
 	onClose(): Promise<void> {
 		// Resolve any awaited permission prompt so the run's canUseTool unblocks.
 		this.cancelPendingPermissions("deny");
+		this.stopWorkingIndicator();
 		if (this.renderTimer) {
 			window.clearTimeout(this.renderTimer);
 			this.renderTimer = null;
@@ -161,6 +164,29 @@ export class ClaudeOutputView extends ItemView {
 	setStatus(status: RunStatus): void {
 		persistedStatus = status;
 		this.renderStatus(status);
+		// Show the inline working indicator only while a run is in flight.
+		if (status === "running") {
+			this.startWorkingIndicator();
+		} else {
+			this.stopWorkingIndicator();
+		}
+	}
+
+	/** Update the live token total on the working indicator, if shown. */
+	setWorkingTokens(tokens: number): void {
+		this.workingIndicator?.setTokens(tokens);
+	}
+
+	private startWorkingIndicator(): void {
+		this.stopWorkingIndicator();
+		if (!this.outputEl) return;
+		this.workingIndicator = new WorkingIndicator(this.outputEl);
+		this.scrollToBottom();
+	}
+
+	private stopWorkingIndicator(): void {
+		this.workingIndicator?.stop();
+		this.workingIndicator = null;
 	}
 
 	getStatus(): RunStatus {
@@ -322,6 +348,8 @@ export class ClaudeOutputView extends ItemView {
 	clear(): void {
 		// Resolve any open permission prompts before their DOM is removed.
 		this.cancelPendingPermissions("deny");
+		// Drop the indicator (and its timer); emptying outputEl detaches its DOM.
+		this.stopWorkingIndicator();
 		if (this.outputEl) {
 			this.outputEl.empty();
 		}
@@ -508,6 +536,9 @@ export class ClaudeOutputView extends ItemView {
 	}
 
 	private scrollToBottom(): void {
+		// Keep the working indicator the last child so streamed content renders
+		// above it, then pin the scroll to the bottom.
+		this.workingIndicator?.bump();
 		if (this.outputEl) {
 			this.outputEl.scrollTop = this.outputEl.scrollHeight;
 		}

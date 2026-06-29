@@ -31,6 +31,8 @@ export interface PromptRunCallbacks {
 	onToolResult: (result: ChatToolResult) => void;
 	/** Non-terminal cost/tokens/duration meta from the SDK result. */
 	onResult: (result: ChatResult) => void;
+	/** Running output-token count for the live working indicator. */
+	onUsage?: (tokens: number) => void;
 	onError: (message: string) => void;
 	/** Terminal; fires exactly once when the run settles. */
 	onComplete: (outcome: PromptRunOutcome) => void;
@@ -138,6 +140,7 @@ export class PromptRunner {
 					this.lastResult = result;
 					callbacks.onResult(result);
 				},
+				onUsage: (tokens) => callbacks.onUsage?.(tokens),
 				onError: (message) => {
 					this.errorSeen = true;
 					callbacks.onError(message);

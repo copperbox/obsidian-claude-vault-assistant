@@ -15,7 +15,7 @@ import type {
 } from "./permission-types";
 import { resolveSpawnEnv } from "./env-resolver";
 import { patchElectronEventTarget } from "./electron-compat";
-import { sumUsageTokens } from "./format";
+import { sumUsageTokens, outputTokensFromUsage } from "./format";
 
 // Re-export the permission contract so existing importers of these types from
 // "./chat-session" keep working; the canonical home is "./permission-types".
@@ -54,6 +54,11 @@ export interface ChatCallbacks {
 	onError: (message: string) => void;
 	onTurnStart?: () => void;
 	onTurnEnd?: () => void;
+	/**
+	 * Running count of output tokens generated so far this turn, emitted each
+	 * time an assistant message arrives. Drives the live working indicator.
+	 */
+	onUsage?: (tokens: number) => void;
 }
 
 export type QueryFn = (params: {
@@ -212,6 +217,8 @@ export class ChatSession {
 	private started = false;
 	private disposed = false;
 	private turnActive = false;
+	/** Cumulative output tokens for the in-flight turn; reset on startTurn. */
+	private turnOutputTokens = 0;
 
 	constructor(config: ChatSessionConfig) {
 		this.config = config;
@@ -369,6 +376,16 @@ export class ChatSession {
 
 	private handleAssistant(data: Record<string, unknown>): void {
 		const message = data["message"] as Record<string, unknown> | undefined;
+
+		// Accumulate output tokens for the live working indicator. Each assistant
+		// message reports the tokens produced by that step; summing them gives a
+		// monotonically growing "generated so far" count.
+		const stepTokens = outputTokensFromUsage(message?.["usage"]);
+		if (stepTokens > 0) {
+			this.turnOutputTokens += stepTokens;
+			this.config.callbacks.onUsage?.(this.turnOutputTokens);
+		}
+
 		const content = message?.["content"];
 		if (!Array.isArray(content)) return;
 
@@ -432,6 +449,7 @@ export class ChatSession {
 	private startTurn(): void {
 		if (this.turnActive) return;
 		this.turnActive = true;
+		this.turnOutputTokens = 0;
 		this.config.callbacks.onTurnStart?.();
 	}
 

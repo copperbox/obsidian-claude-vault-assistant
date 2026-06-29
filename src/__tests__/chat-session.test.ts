@@ -58,6 +58,7 @@ function makeCallbacks(): ChatCallbacks & {
 		onError: vi.fn(),
 		onTurnStart: vi.fn(),
 		onTurnEnd: vi.fn(),
+		onUsage: vi.fn(),
 	} as never;
 }
 
@@ -279,6 +280,74 @@ describe("ChatSession", () => {
 		expect(callbacks.onResult).toHaveBeenCalledWith(
 			expect.objectContaining({ tokens: 130 })
 		);
+	});
+
+	it("emits a cumulative output-token count per assistant message", async () => {
+		const session = makeSession();
+		await session.start();
+		session.send("hi");
+
+		fake.emit({
+			type: "assistant",
+			message: {
+				content: [{ type: "text", text: "a" }],
+				usage: { output_tokens: 12 },
+			},
+		});
+		await flush();
+		expect(callbacks.onUsage).toHaveBeenLastCalledWith(12);
+
+		fake.emit({
+			type: "assistant",
+			message: {
+				content: [{ type: "text", text: "b" }],
+				usage: { output_tokens: 8 },
+			},
+		});
+		await flush();
+		expect(callbacks.onUsage).toHaveBeenLastCalledWith(20);
+	});
+
+	it("skips the usage callback when a message has no output tokens", async () => {
+		const session = makeSession();
+		await session.start();
+		session.send("hi");
+
+		fake.emit({
+			type: "assistant",
+			message: { content: [{ type: "text", text: "a" }] },
+		});
+		await flush();
+		expect(callbacks.onUsage).not.toHaveBeenCalled();
+	});
+
+	it("resets the running token count at the start of each turn", async () => {
+		const session = makeSession();
+		await session.start();
+
+		session.send("first");
+		fake.emit({
+			type: "assistant",
+			message: { content: [], usage: { output_tokens: 30 } },
+		});
+		await flush();
+		expect(callbacks.onUsage).toHaveBeenLastCalledWith(30);
+
+		fake.emit({
+			type: "result",
+			subtype: "success",
+			result: "done",
+			is_error: false,
+		});
+		await flush();
+
+		session.send("second");
+		fake.emit({
+			type: "assistant",
+			message: { content: [], usage: { output_tokens: 5 } },
+		});
+		await flush();
+		expect(callbacks.onUsage).toHaveBeenLastCalledWith(5);
 	});
 
 	it("allows a tool once without caching when the user picks 'once'", async () => {

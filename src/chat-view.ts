@@ -14,6 +14,7 @@ import {
 } from "./tool-render";
 import { formatResultMeta } from "./format";
 import { labelCodeBlocks } from "./code-block";
+import { WorkingIndicator } from "./working-indicator";
 
 export const VIEW_TYPE_CLAUDE_CHAT = "claude-vault-chat";
 
@@ -102,6 +103,7 @@ export class ClaudeChatView extends ItemView {
 	private currentAssistantText = "";
 	private toolCallEls: Map<string, ToolCallEls> = new Map();
 	private pendingCards: Set<PermissionCardHandle> = new Set();
+	private workingIndicator: WorkingIndicator | null = null;
 
 	constructor(leaf: WorkspaceLeaf) {
 		super(leaf);
@@ -178,6 +180,7 @@ export class ClaudeChatView extends ItemView {
 
 	async onClose(): Promise<void> {
 		await this.teardownSession();
+		this.stopWorkingIndicator();
 		this.transcriptEl = null;
 		this.inputEl = null;
 		this.sendBtn = null;
@@ -216,6 +219,7 @@ export class ClaudeChatView extends ItemView {
 				onError: (message) => this.addError(message),
 				onTurnStart: () => this.onTurnStart(),
 				onTurnEnd: () => this.onTurnEnd(),
+				onUsage: (tokens) => this.workingIndicator?.setTokens(tokens),
 			},
 		};
 
@@ -311,6 +315,7 @@ export class ClaudeChatView extends ItemView {
 
 	private async handleNewChat(): Promise<void> {
 		await this.teardownSession();
+		this.stopWorkingIndicator();
 		this.transcriptEl?.empty();
 		this.currentAssistantEl = null;
 		this.currentAssistantText = "";
@@ -330,9 +335,11 @@ export class ClaudeChatView extends ItemView {
 		this.setStatus("running", "Running");
 		this.stopBtn?.show();
 		this.setInputEnabled(false);
+		this.startWorkingIndicator();
 	}
 
 	private onTurnEnd(): void {
+		this.stopWorkingIndicator();
 		this.finalizeAssistant();
 		this.setStatus("idle", "Idle");
 		this.stopBtn?.hide();
@@ -341,6 +348,19 @@ export class ClaudeChatView extends ItemView {
 			this.deps.lock.release();
 		}
 		this.inputEl?.focus();
+	}
+
+	/** Show the inline "Claude is working" indicator at the transcript bottom. */
+	private startWorkingIndicator(): void {
+		this.stopWorkingIndicator();
+		if (!this.transcriptEl) return;
+		this.workingIndicator = new WorkingIndicator(this.transcriptEl);
+		this.scrollToBottom();
+	}
+
+	private stopWorkingIndicator(): void {
+		this.workingIndicator?.stop();
+		this.workingIndicator = null;
 	}
 
 	// --- transcript rendering ---------------------------------------------
@@ -503,6 +523,9 @@ export class ClaudeChatView extends ItemView {
 	}
 
 	private scrollToBottom(): void {
+		// Keep the working indicator the last child so freshly appended content
+		// renders above it, then pin the scroll to the bottom.
+		this.workingIndicator?.bump();
 		if (this.transcriptEl) {
 			this.transcriptEl.scrollTop = this.transcriptEl.scrollHeight;
 		}
