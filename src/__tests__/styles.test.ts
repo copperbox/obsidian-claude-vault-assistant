@@ -28,4 +28,16 @@ describe("styles.css text selection", () => {
 		expect(body).toContain("user-select: text");
 		expect(body).toContain("-webkit-user-select: text");
 	});
+
+	it("enables text selection on the chat transcript", () => {
+		const body = ruleBody(".claude-chat-transcript");
+		expect(body).toContain("user-select: text");
+		expect(body).toContain("-webkit-user-select: text");
+	});
+
+	it("enables text selection on the chat input", () => {
+		const body = ruleBody(".claude-chat-input");
+		expect(body).toContain("user-select: text");
+		expect(body).toContain("-webkit-user-select: text");
+	});
 });

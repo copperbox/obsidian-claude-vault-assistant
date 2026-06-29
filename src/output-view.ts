@@ -4,6 +4,11 @@ import {
 	formatDuration,
 	formatTimestamp,
 } from "./run-history";
+import {
+	type ToolCallEls,
+	renderToolCall,
+	renderToolResult,
+} from "./tool-render";
 
 export const VIEW_TYPE_CLAUDE_OUTPUT = "claude-vault-output";
 
@@ -46,11 +51,7 @@ export class ClaudeOutputView extends ItemView {
 	private historyEntries: RunHistoryEntry[] = [];
 	private onClearHistory: (() => void) | null = null;
 
-	private toolCallEls: Map<string, {
-		summary: HTMLElement;
-		details: HTMLElement;
-		statusEl: HTMLElement;
-	}> = new Map();
+	private toolCallEls: Map<string, ToolCallEls> = new Map();
 
 	constructor(leaf: WorkspaceLeaf) {
 		super(leaf);
@@ -359,41 +360,10 @@ export class ClaudeOutputView extends ItemView {
 		this.markdownEl = null;
 		this.markdownContent = "";
 
-		const details = this.outputEl.createEl("details", {
-			cls: "claude-tool-call",
-		});
-
-		const summary = details.createEl("summary", {
-			cls: "claude-tool-call-summary",
-		});
-
-		const statusEl = summary.createSpan({
-			cls: "claude-tool-call-status claude-tool-call-status-pending",
-			text: "…",
-		});
-		statusEl.setAttr("aria-label", "pending");
-
-		summary.createSpan({
-			text: toolName,
-			cls: "claude-tool-call-name",
-		});
-		if (filePath) {
-			summary.createSpan({
-				text: filePath,
-				cls: "claude-tool-call-path",
-			});
-		}
-
-		if (input && Object.keys(input).length > 0) {
-			const body = details.createDiv({ cls: "claude-tool-call-input" });
-			const filtered = this.filterToolInput(toolName, input);
-			body.createEl("pre", {
-				text: JSON.stringify(filtered, null, 2),
-			});
-		}
+		const els = renderToolCall(this.outputEl, { toolName, filePath, input });
 
 		if (toolUseId) {
-			this.toolCallEls.set(toolUseId, { summary, details, statusEl });
+			this.toolCallEls.set(toolUseId, els);
 		}
 
 		this.scrollToBottom();
@@ -403,52 +373,10 @@ export class ClaudeOutputView extends ItemView {
 		const entry = this.toolCallEls.get(toolUseId);
 		if (!entry) return;
 
-		const { summary, details, statusEl } = entry;
-
-		statusEl.removeClass("claude-tool-call-status-pending");
-		if (isError) {
-			statusEl.addClass("claude-tool-call-status-error");
-			statusEl.setText("✗");
-			statusEl.setAttr("aria-label", "error");
-			summary.addClass("claude-tool-call-summary-error");
-			details.setAttr("open", "");
-		} else {
-			statusEl.addClass("claude-tool-call-status-success");
-			statusEl.setText("✓");
-			statusEl.setAttr("aria-label", "success");
-		}
-
-		if (content) {
-			const resultEl = details.createDiv({
-				cls: isError
-					? "claude-tool-call-result claude-tool-call-result-error"
-					: "claude-tool-call-result",
-			});
-			resultEl.createEl("pre", { text: content });
-		}
+		renderToolResult(entry, isError, content);
 
 		this.toolCallEls.delete(toolUseId);
 		this.scrollToBottom();
-	}
-
-	private filterToolInput(toolName: string, input: Record<string, unknown>): Record<string, unknown> {
-		// For Write/Edit, omit large content/new_string fields to keep display concise
-		const omitKeys: Record<string, string[]> = {
-			Write: ["content"],
-			Edit: ["new_string", "old_string"],
-		};
-		const keysToOmit = omitKeys[toolName];
-		if (!keysToOmit) return input;
-
-		const filtered: Record<string, unknown> = {};
-		for (const [key, value] of Object.entries(input)) {
-			if (keysToOmit.includes(key) && typeof value === "string") {
-				filtered[key] = `(${value.length} chars)`;
-			} else {
-				filtered[key] = value;
-			}
-		}
-		return filtered;
 	}
 
 	showResult(costUsd?: number, durationMs?: number): void {

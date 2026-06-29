@@ -24,6 +24,8 @@ export default defineConfig([
 				process: "readonly",
 				NodeJS: "readonly",
 				Notification: "readonly",
+				AsyncIterable: "readonly",
+				AsyncIterator: "readonly",
 			},
 		},
 		rules: {

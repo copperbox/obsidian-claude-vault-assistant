@@ -21,3 +21,4 @@ data.json
 
 # claude
 .claude/
+graphify-out/

@@ -2,7 +2,7 @@
 
 Run pre-defined claude prompts against your obsidian vault, within obsidan itself.
 
-An Obsidian plugin that lets you define reusable prompt files (`PROMPT-*.md`) and run them against your vault or the currently active note using the Claude Code CLI in headless mode.
+An Obsidian plugin that lets you define reusable prompt files (`PROMPT-*.md`) and run them against your vault or the currently active note using the Claude Code CLI in headless mode. It also provides an **interactive chat** -- a multi-turn conversation with Claude inside an Obsidian pane, with in-chat tool approvals.
 
 ## ⚠️ Security & Trust Model — Read This First
 
@@ -12,6 +12,7 @@ Things you should understand before using this plugin:
 
 - **The plugin invokes a real shell process.** On macOS/Linux it spawns through your login shell (`$SHELL -l -c …`) so your normal environment (PATH, API tokens, shell rc files) is in scope. On Windows it invokes the CLI executable directly. Arguments are properly escaped — a prompt cannot inject shell commands at the spawn boundary — but the CLI itself still runs with your full user permissions.
 - **Whatever you put in `Allowed tools` is what Claude can do.** The default allowlist (`Read, Grep, Glob, Write, Edit`) is scoped to file I/O inside the vault. If you add `Bash` (or any other tool that executes code), Claude can run arbitrary commands on your machine during a run. Only do this if you understand the consequences.
+- **Interactive chat can grant extra tools per conversation.** One-off prompts (`PROMPT-*.md`, ad-hoc, active-note runs) are always restricted to the `Allowed tools` whitelist and nothing else. In the interactive chat, the whitelist still applies by default, but when Claude wants a tool outside it, you get an in-chat prompt to **Allow once**, **Allow for this chat**, or **Deny**. "Allow for this chat" lasts only until that chat is closed and never changes the whitelist used by one-off prompts. Approving a code-executing tool (e.g. `Bash`) carries the same risks as adding it to the whitelist -- only approve what you understand.
 - **Prompt injection from note content is a real risk.** Claude reads the notes you point it at. If your vault contains untrusted content — clipped web pages, pasted emails, shared notes, anything you didn't author — that content can contain instructions that the model may follow. With a permissive tool allowlist this becomes a path to unintended file edits or command execution. Audit what's in your vault before running broad prompts over it.
 - **The `CLI path` setting is not sandboxed.** It's the executable the plugin runs. Don't point it at anything you wouldn't otherwise execute. Leave it as `claude` unless you have a specific reason to change it.
 - **`CLAUDE.md` is sent as a system prompt on every run.** Anything in that file shapes the model's behavior across all prompts. Don't paste untrusted content into it.
@@ -116,6 +117,29 @@ Use `Open Claude Output` from the command palette to open the output pane at any
 - **Output** — Live-streamed markdown output from the current or most recent run, with status indicators (Idle / Running / Complete / Error / Stopped / Limit Reached)
 - **History** — A log of past runs showing prompt name, scope, timestamp, duration, status, and cost. Click any entry to review its cached output. Ad-hoc runs include the full prompt text in a collapsible **Prompt** section above the replay; runs from `PROMPT-*.md` files show only the file name. Use the **Clear History** button to remove all entries.
 
+### Interactive chat
+
+Open a multi-turn conversation with Claude inside Obsidian:
+
+1. **Ribbon icon** — Click the chat (message) icon in the left sidebar, or
+2. **Command palette** — Use `Open Claude chat`
+
+Type a message and press **Enter** to send (**Shift+Enter** for a newline). Claude's replies render as markdown, and tool calls appear inline as collapsible sections, the same as the output pane. The conversation keeps its context across turns -- one Claude process stays alive for the life of the chat.
+
+**Tool approvals.** The chat starts with the same `Allowed tools` whitelist as one-off prompts. When Claude wants a tool that isn't on the whitelist, an approval card appears in the conversation with three choices:
+
+- **Allow once** — permit this single call; you'll be asked again next time.
+- **Allow for this chat** — permit this tool for the rest of the current conversation; forgotten when the chat closes.
+- **Deny** — refuse the call and tell Claude so.
+
+These approvals never modify the whitelist used by one-off prompts.
+
+**Choosing the model.** The chat header has a model dropdown showing the model that will be used for the next message. It defaults to your `Model override` setting (or "Default (CLI)" when that's empty, letting the CLI choose). Pick a different model (Opus, Sonnet, Haiku, or a custom value from your settings) to switch -- it applies live to the running conversation and is remembered for this chat only; it never changes your saved settings. The dropdown is locked while a turn is in progress.
+
+**Stopping and resetting.** Use **Stop** in the chat header to interrupt the current turn without ending the conversation. Use **New chat** to discard the conversation and start fresh.
+
+**One run at a time.** A chat turn and a one-off prompt run cannot run simultaneously. An idle, open chat does not block one-off prompts -- the lock is only held while a turn is actively running. The `Max turns` and `Max budget (USD)` settings apply per chat turn.
+
 ### CLAUDE.md support
 
 If a `CLAUDE.md` file exists at the root of your vault, its contents are automatically passed as a system prompt to every run. Use this to set global instructions, conventions, or context that should apply to all prompts.
@@ -154,11 +178,11 @@ After Claude edits files, the plugin automatically refreshes modified files in O
 
 ## Privacy & Network Usage
 
-This plugin spawns the [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) as a local child process. When you run a prompt, the CLI sends your prompt content and relevant vault files to Anthropic's API for processing. No data is sent by the plugin itself — all network communication is handled by the CLI.
+This plugin spawns the [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) as a local child process. One-off prompts spawn the CLI directly; the interactive chat drives the same CLI through the [Claude Agent SDK](https://docs.anthropic.com/en/docs/claude-code/sdk) (the SDK is pointed at your installed CLI, so it uses your existing authentication). When you run a prompt or send a chat message, the CLI sends your content and relevant vault files to Anthropic's API for processing. No data is sent by the plugin itself — all network communication is handled by the CLI.
 
 - **Account required**: You need an authenticated Anthropic account with billing to use the Claude Code CLI.
-- **What is sent**: Prompt file contents, vault file contents read by Claude during a run, and any system prompt from your `CLAUDE.md` file.
-- **What is stored locally**: Run history (prompt name, scope, timestamps, cost, and output) is stored in the plugin's data file within your vault's `.obsidian/plugins/` directory.
+- **What is sent**: Prompt file contents, chat messages, vault file contents read by Claude during a run, and any system prompt from your `CLAUDE.md` file.
+- **What is stored locally**: Run history for one-off prompts (prompt name, scope, timestamps, cost, and output) is stored in the plugin's data file within your vault's `.obsidian/plugins/` directory. Interactive chat conversations are held in memory only and are not written to the run history or to session files on disk.
 - **No telemetry**: This plugin does not collect analytics or send any data independently of the CLI.
 
 See [Anthropic's Privacy Policy](https://www.anthropic.com/privacy) for details on how Anthropic handles data sent via the CLI.
@@ -180,7 +204,7 @@ Configure the plugin in Obsidian Settings > Claude Vault Assistant:
 
 - **`src/main.ts`** — Plugin entry point, registers commands and views
 - **`src/settings.ts`** — Plugin settings interface and settings tab
-- **`src/claude-runner.ts`** — Spawns Claude CLI as a child process
+- **`src/claude-runner.ts`** — Spawns Claude CLI as a child process (one-off prompts)
 - **`src/stream-parser.ts`** — Parses streamed JSON output from the CLI
 - **`src/output-view.ts`** — Sidebar output pane with markdown rendering and history tab
 - **`src/run-history.ts`** — Run history storage, retrieval, and pruning logic
@@ -189,6 +213,11 @@ Configure the plugin in Obsidian Settings > Claude Vault Assistant:
 - **`src/prompt-picker.ts`** — Modal for selecting a prompt to run
 - **`src/adhoc-prompt-modal.ts`** — Modal for typing ad-hoc prompts
 - **`src/vault-refresher.ts`** — Refreshes modified files after a run
+- **`src/chat-session.ts`** — Drives the interactive multi-turn chat via the Claude Agent SDK, with the in-chat tool-approval bridge
+- **`src/chat-view.ts`** — Sidebar chat pane: transcript, input box, and permission cards
+- **`src/env-resolver.ts`** — Harvests the login-shell environment so the SDK-spawned CLI sees the same env as the one-off runner
+- **`src/activity-lock.ts`** — Shared gate so a one-off run and a chat turn never run at the same time
+- **`src/tool-render.ts`** — Shared tool-call rendering used by both the output and chat views
 
 ## Development
 

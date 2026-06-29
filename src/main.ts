@@ -10,6 +10,12 @@ import { scanPromptFiles, readPromptContent } from "./prompt-scanner";
 import { PromptPickerModal, ScopePickerModal } from "./prompt-picker";
 import { AdhocPromptModal } from "./adhoc-prompt-modal";
 import { ClaudeOutputView, VIEW_TYPE_CLAUDE_OUTPUT } from "./output-view";
+import {
+	ClaudeChatView,
+	VIEW_TYPE_CLAUDE_CHAT,
+	type ChatViewDeps,
+} from "./chat-view";
+import { ActivityLock } from "./activity-lock";
 import { StreamLineBuffer, parseStreamLine } from "./stream-parser";
 import { VaultRefresher } from "./vault-refresher";
 import { parsePromptFrontmatter, mergeOverrides, hasOverrides } from "./frontmatter";
@@ -28,6 +34,8 @@ export default class ClaudeVaultAssistant extends Plugin {
 	settings: PluginSettings = DEFAULT_SETTINGS;
 	history: RunHistoryEntry[] = [];
 	runner: ClaudeRunner = new ClaudeRunner();
+	/** Shared gate so a one-off run and a chat turn never run at the same time. */
+	lock: ActivityLock = new ActivityLock();
 	private ribbonIconEl: HTMLElement | null = null;
 
 	async onload() {
@@ -39,11 +47,21 @@ export default class ClaudeVaultAssistant extends Plugin {
 			(leaf) => new ClaudeOutputView(leaf)
 		);
 
+		this.registerView(VIEW_TYPE_CLAUDE_CHAT, (leaf) => {
+			const view = new ClaudeChatView(leaf);
+			view.setDeps(this.chatDeps());
+			return view;
+		});
+
 		this.ribbonIconEl = this.addRibbonIcon(
 			"bot",
 			"Run Claude prompt",
 			() => this.openScopePickerAndRun()
 		);
+
+		this.addRibbonIcon("message-square", "Open Claude chat", () => {
+			void this.activateChatView();
+		});
 
 		this.addCommand({
 			id: "run-vault-prompt",
@@ -88,9 +106,25 @@ export default class ClaudeVaultAssistant extends Plugin {
 			name: "Open Claude output",
 			callback: () => this.activateOutputView(),
 		});
+
+		this.addCommand({
+			id: "open-chat",
+			name: "Open Claude chat",
+			callback: () => {
+				void this.activateChatView();
+			},
+		});
 	}
 
-	onunload() {}
+	onunload() {
+		// Tear down any live chat subprocess so it doesn't outlive the plugin.
+		for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_CLAUDE_CHAT)) {
+			const view = leaf.view;
+			if (view instanceof ClaudeChatView) {
+				void view.shutdown();
+			}
+		}
+	}
 
 	private setRibbonRunning(running: boolean): void {
 		if (!this.ribbonIconEl) return;
@@ -198,6 +232,11 @@ export default class ClaudeVaultAssistant extends Plugin {
 		rawPromptContent: string,
 		adhocPrompt?: string
 	): Promise<void> {
+		if (this.lock.isBusy) {
+			new Notice(`Claude is busy: ${this.lock.label ?? "another run"}.`);
+			return;
+		}
+
 		const view = await this.activateOutputView();
 		if (!view) {
 			new Notice("Could not open Claude output pane.");
@@ -250,6 +289,13 @@ export default class ClaudeVaultAssistant extends Plugin {
 		let accumulatedOutput = "";
 		let lastCostUsd: number | undefined;
 
+		if (!this.lock.tryAcquire(`Prompt: ${promptName}`)) {
+			new Notice(`Claude is busy: ${this.lock.label ?? "another run"}.`);
+			view.setStatus("idle");
+			this.setRibbonRunning(false);
+			return;
+		}
+
 		try {
 			const child = this.runner.run({
 				vaultPath,
@@ -301,6 +347,7 @@ export default class ClaudeVaultAssistant extends Plugin {
 				lineBuffer.flush();
 				view.showExitCode(code);
 				this.setRibbonRunning(false);
+				this.lock.release();
 
 				const durationMs = Date.now() - runStartTime;
 				const durationSec = (durationMs / 1000).toFixed(1);
@@ -363,8 +410,11 @@ export default class ClaudeVaultAssistant extends Plugin {
 				view.showError(err.message);
 				view.setStatus("error");
 				this.setRibbonRunning(false);
+				this.lock.release();
 			});
 		} catch (err) {
+			this.lock.release();
+			this.setRibbonRunning(false);
 			if (err instanceof ClaudeRunnerError) {
 				view.showError(err.message);
 				view.setStatus("error");
@@ -407,6 +457,42 @@ export default class ClaudeVaultAssistant extends Plugin {
 		await this.app.workspace.revealLeaf(leaf);
 		const view = leaf.view as ClaudeOutputView;
 		this.wireHistoryCallbacks(view);
+		return view;
+	}
+
+	private getVaultPath(): string | null {
+		return (
+			(this.app.vault.adapter as { basePath?: string }).basePath ?? null
+		);
+	}
+
+	private chatDeps(): ChatViewDeps {
+		return {
+			getSettings: () => this.settings,
+			getVaultPath: () => this.getVaultPath(),
+			lock: this.lock,
+		};
+	}
+
+	async activateChatView(): Promise<ClaudeChatView | null> {
+		const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE_CLAUDE_CHAT);
+		if (existing.length > 0) {
+			const leaf = existing[0]!;
+			await this.app.workspace.revealLeaf(leaf);
+			const view = leaf.view as ClaudeChatView;
+			view.setDeps(this.chatDeps());
+			return view;
+		}
+
+		const leaf = this.app.workspace.getRightLeaf(false);
+		if (!leaf) return null;
+		await leaf.setViewState({
+			type: VIEW_TYPE_CLAUDE_CHAT,
+			active: true,
+		});
+		await this.app.workspace.revealLeaf(leaf);
+		const view = leaf.view as ClaudeChatView;
+		view.setDeps(this.chatDeps());
 		return view;
 	}
 
