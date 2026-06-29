@@ -99,6 +99,8 @@ function createMockEl(): Record<string, unknown> {
 		addEventListener: (_event: string, _handler: () => void) => {},
 		focus: () => {},
 		closest: (_selector: string) => null,
+		querySelector: (_selector: string) => null,
+		querySelectorAll: (_selector: string) => [],
 		getAttr: (_name: string) => null,
 		setAttr: (_name: string, _value: string) => {},
 		innerHTML: "",

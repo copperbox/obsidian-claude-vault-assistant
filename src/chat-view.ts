@@ -1,19 +1,19 @@
 import { ItemView, MarkdownRenderer, Notice, type WorkspaceLeaf } from "obsidian";
 import type { PluginSettings } from "./settings";
 import type { ActivityLock } from "./activity-lock";
+import { ChatSession, type ChatSessionConfig } from "./chat-session";
+import type { PermissionDecision, PermissionRequest } from "./permission-types";
 import {
-	ChatSession,
-	type ChatSessionConfig,
-	type PermissionDecision,
-	type PermissionRequest,
-} from "./chat-session";
+	renderPermissionCard,
+	type PermissionCardHandle,
+} from "./permission-card";
 import {
 	type ToolCallEls,
-	filterToolInput,
 	renderToolCall,
 	renderToolResult,
 } from "./tool-render";
 import { formatResultMeta } from "./format";
+import { labelCodeBlocks } from "./code-block";
 
 export const VIEW_TYPE_CLAUDE_CHAT = "claude-vault-chat";
 
@@ -101,6 +101,7 @@ export class ClaudeChatView extends ItemView {
 	private currentAssistantEl: HTMLElement | null = null;
 	private currentAssistantText = "";
 	private toolCallEls: Map<string, ToolCallEls> = new Map();
+	private pendingCards: Set<PermissionCardHandle> = new Set();
 
 	constructor(leaf: WorkspaceLeaf) {
 		super(leaf);
@@ -225,6 +226,8 @@ export class ClaudeChatView extends ItemView {
 	}
 
 	private async teardownSession(): Promise<void> {
+		// Resolve any awaited permission prompt so dispose() can fully unwind.
+		this.cancelPendingPermissions("deny");
 		if (this.session) {
 			await this.session.dispose();
 			this.session = null;
@@ -298,6 +301,9 @@ export class ClaudeChatView extends ItemView {
 	}
 
 	private async handleStop(): Promise<void> {
+		// Deny any pending permission prompt first so the awaited canUseTool
+		// resolves and the interrupt can unwind the in-flight turn.
+		this.cancelPendingPermissions("deny");
 		if (this.session) {
 			await this.session.interrupt();
 		}
@@ -364,14 +370,18 @@ export class ClaudeChatView extends ItemView {
 
 	private renderAssistantMarkdown(): void {
 		if (!this.currentAssistantEl) return;
-		this.currentAssistantEl.empty();
+		const el = this.currentAssistantEl;
+		el.empty();
 		void MarkdownRenderer.render(
 			this.app,
 			this.currentAssistantText,
-			this.currentAssistantEl,
+			el,
 			"/",
 			this
-		);
+		).then(() => {
+			labelCodeBlocks(el);
+			this.scrollToBottom();
+		});
 	}
 
 	private finalizeAssistant(): void {
@@ -440,69 +450,23 @@ export class ClaudeChatView extends ItemView {
 		req: PermissionRequest
 	): Promise<PermissionDecision> => {
 		return new Promise((resolve) => {
-			this.renderPermissionCard(req, resolve);
+			if (!this.transcriptEl) {
+				resolve("deny");
+				return;
+			}
+			this.finalizeAssistant();
+			const handle = renderPermissionCard(this.transcriptEl, req, (decision) => {
+				this.pendingCards.delete(handle);
+				resolve(decision);
+			});
+			this.pendingCards.add(handle);
+			this.scrollToBottom();
 		});
 	};
 
-	private renderPermissionCard(
-		req: PermissionRequest,
-		resolve: (decision: PermissionDecision) => void
-	): void {
-		if (!this.transcriptEl) {
-			resolve("deny");
-			return;
-		}
-		this.finalizeAssistant();
-
-		const card = this.transcriptEl.createDiv({ cls: "claude-chat-permission" });
-		card.createDiv({
-			cls: "claude-chat-permission-title",
-			text: req.title ?? `Allow Claude to use ${req.toolName}?`,
-		});
-		if (req.description) {
-			card.createDiv({
-				cls: "claude-chat-permission-desc",
-				text: req.description,
-			});
-		}
-		if (req.input && Object.keys(req.input).length > 0) {
-			const body = card.createDiv({ cls: "claude-chat-permission-input" });
-			body.createEl("pre", {
-				text: JSON.stringify(filterToolInput(req.toolName, req.input), null, 2),
-			});
-		}
-
-		const actions = card.createDiv({ cls: "claude-chat-permission-actions" });
-		let answered = false;
-		const choose = (decision: PermissionDecision) => {
-			if (answered) return;
-			answered = true;
-			card.addClass(`claude-chat-permission-${decision}`);
-			actions.empty();
-			actions.createSpan({
-				cls: "claude-chat-permission-resolved",
-				text: decisionLabel(decision),
-			});
-			resolve(decision);
-		};
-
-		const once = actions.createEl("button", {
-			text: "Allow once",
-			cls: "claude-chat-permission-btn",
-		});
-		once.addEventListener("click", () => choose("once"));
-		const session = actions.createEl("button", {
-			text: "Allow for this chat",
-			cls: "claude-chat-permission-btn",
-		});
-		session.addEventListener("click", () => choose("session"));
-		const deny = actions.createEl("button", {
-			text: "Deny",
-			cls: "claude-chat-permission-btn claude-chat-permission-btn-deny",
-		});
-		deny.addEventListener("click", () => choose("deny"));
-
-		this.scrollToBottom();
+	private cancelPendingPermissions(decision: PermissionDecision = "deny"): void {
+		for (const handle of [...this.pendingCards]) handle.cancel(decision);
+		this.pendingCards.clear();
 	}
 
 	private handleLinkClick(evt: MouseEvent): void {
@@ -542,16 +506,5 @@ export class ClaudeChatView extends ItemView {
 		if (this.transcriptEl) {
 			this.transcriptEl.scrollTop = this.transcriptEl.scrollHeight;
 		}
-	}
-}
-
-function decisionLabel(decision: PermissionDecision): string {
-	switch (decision) {
-		case "once":
-			return "Allowed once";
-		case "session":
-			return "Allowed for this chat";
-		case "deny":
-			return "Denied";
 	}
 }

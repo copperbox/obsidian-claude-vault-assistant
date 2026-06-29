@@ -2,17 +2,17 @@
 
 Run pre-defined claude prompts against your obsidian vault, within obsidan itself.
 
-An Obsidian plugin that lets you define reusable prompt files (`PROMPT-*.md`) and run them against your vault or the currently active note using the Claude Code CLI in headless mode. It also provides an **interactive chat** -- a multi-turn conversation with Claude inside an Obsidian pane, with in-chat tool approvals.
+An Obsidian plugin that lets you define reusable prompt files (`PROMPT-*.md`) and run them against your vault or the currently active note. Both one-off prompts and the **interactive chat** (a multi-turn conversation with Claude inside an Obsidian pane) drive the Claude Code CLI through the [Claude Agent SDK](https://docs.anthropic.com/en/docs/claude-code/sdk), with in-pane tool approvals.
 
 ## ⚠️ Security & Trust Model — Read This First
 
-**This plugin works by spawning the Claude Code CLI as a local shell process on your machine.** Prompts you write — including ad-hoc prompts, `PROMPT-*.md` files, and your `CLAUDE.md` — are passed to the CLI, which then drives an agentic loop that can read, write, and edit files in your vault (and run other tools you explicitly allow). You are giving an LLM the ability to take actions on your system. Treat that seriously.
+**This plugin works by running the Claude Code CLI as a local process on your machine.** Prompts you write — including ad-hoc prompts, `PROMPT-*.md` files, and your `CLAUDE.md` — are passed to the CLI, which then drives an agentic loop that can read, write, and edit files in your vault (and run other tools you explicitly allow). You are giving an LLM the ability to take actions on your system. Treat that seriously.
 
 Things you should understand before using this plugin:
 
-- **The plugin invokes a real shell process.** On macOS/Linux it spawns through your login shell (`$SHELL -l -c …`) so your normal environment (PATH, API tokens, shell rc files) is in scope. On Windows it invokes the CLI executable directly. Arguments are properly escaped — a prompt cannot inject shell commands at the spawn boundary — but the CLI itself still runs with your full user permissions.
-- **Whatever you put in `Allowed tools` is what Claude can do.** The default allowlist (`Read, Grep, Glob, Write, Edit`) is scoped to file I/O inside the vault. If you add `Bash` (or any other tool that executes code), Claude can run arbitrary commands on your machine during a run. Only do this if you understand the consequences.
-- **Interactive chat can grant extra tools per conversation.** One-off prompts (`PROMPT-*.md`, ad-hoc, active-note runs) are always restricted to the `Allowed tools` whitelist and nothing else. In the interactive chat, the whitelist still applies by default, but when Claude wants a tool outside it, you get an in-chat prompt to **Allow once**, **Allow for this chat**, or **Deny**. "Allow for this chat" lasts only until that chat is closed and never changes the whitelist used by one-off prompts. Approving a code-executing tool (e.g. `Bash`) carries the same risks as adding it to the whitelist -- only approve what you understand.
+- **The plugin runs the CLI as a local process.** The Claude Agent SDK launches your configured CLI executable directly (not through a shell). On macOS/Linux the plugin first harvests your login-shell environment (PATH, API tokens, shell rc exports) and passes it to that process so it sees your normal env; on Windows it uses the process environment directly. Your prompt is delivered to the CLI as data, not as a shell argument, but the CLI itself still runs with your full user permissions.
+- **Whatever you put in `Allowed tools` is what Claude auto-approves.** The default allowlist (`Read, Grep, Glob, Write, Edit`) is scoped to file I/O inside the vault. If you add `Bash` (or any other tool that executes code), Claude can run arbitrary commands on your machine during a run without prompting. Only do this if you understand the consequences.
+- **Tools outside the whitelist require your approval.** Both one-off prompts and the interactive chat auto-approve the `Allowed tools` whitelist. When Claude wants a tool outside it, an approval card appears in the run's pane (the output pane for one-off prompts, the conversation for chat) offering **Allow once**, **Allow for this run/chat**, or **Deny**. For a one-off prompt an approval lasts only for that single run; in chat, "Allow for this chat" lasts until the chat closes. Neither ever changes the saved `Allowed tools` whitelist. Approving a code-executing tool (e.g. `Bash`) carries the same risks as adding it to the whitelist -- only approve what you understand.
 - **Prompt injection from note content is a real risk.** Claude reads the notes you point it at. If your vault contains untrusted content — clipped web pages, pasted emails, shared notes, anything you didn't author — that content can contain instructions that the model may follow. With a permissive tool allowlist this becomes a path to unintended file edits or command execution. Audit what's in your vault before running broad prompts over it.
 - **The `CLI path` setting is not sandboxed.** It's the executable the plugin runs. Don't point it at anything you wouldn't otherwise execute. Leave it as `claude` unless you have a specific reason to change it.
 - **`CLAUDE.md` is sent as a system prompt on every run.** Anything in that file shapes the model's behavior across all prompts. Don't paste untrusted content into it.
@@ -105,6 +105,8 @@ There are four ways to run a prompt:
 
 After selecting a prompt, Claude's output streams in real time into a sidebar pane. Tool calls (file reads, edits, etc.) are shown as collapsible sections beneath the output, each with a status badge (✓ success, ✗ error) once the result returns. When the run finishes, a one-line breakdown shows the cost, elapsed time, and tokens used (e.g. `$0.0123 - 4.5s - 12,345 tokens`).
 
+If Claude requests a tool that isn't on the `Allowed tools` whitelist, an approval card appears in the output pane with **Allow once**, **Allow for this run**, or **Deny**. An approval applies only to that single run and never changes your saved whitelist.
+
 ### Stopping a run
 
 - Click the **Stop** button in the output pane, or
@@ -132,7 +134,7 @@ Type a message and press **Enter** to send (**Shift+Enter** for a newline). Clau
 - **Allow for this chat** — permit this tool for the rest of the current conversation; forgotten when the chat closes.
 - **Deny** — refuse the call and tell Claude so.
 
-These approvals never modify the whitelist used by one-off prompts.
+These approvals never modify your saved `Allowed tools` whitelist. One-off prompts have the same approval flow, scoped to a single run.
 
 **Choosing the model.** The chat header has a model dropdown showing the model that will be used for the next message. It defaults to your `Model override` setting (or "Default (CLI)" when that's empty, letting the CLI choose). Pick a different model (Opus, Sonnet, Haiku, or a custom value from your settings) to switch -- it applies live to the running conversation and is remembered for this chat only; it never changes your saved settings. The dropdown is locked while a turn is in progress.
 
@@ -178,7 +180,7 @@ After Claude edits files, the plugin automatically refreshes modified files in O
 
 ## Privacy & Network Usage
 
-This plugin spawns the [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) as a local child process. One-off prompts spawn the CLI directly; the interactive chat drives the same CLI through the [Claude Agent SDK](https://docs.anthropic.com/en/docs/claude-code/sdk) (the SDK is pointed at your installed CLI, so it uses your existing authentication). When you run a prompt or send a chat message, the CLI sends your content and relevant vault files to Anthropic's API for processing. No data is sent by the plugin itself — all network communication is handled by the CLI.
+This plugin runs the [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) as a local child process. Both one-off prompts and the interactive chat drive the CLI through the [Claude Agent SDK](https://docs.anthropic.com/en/docs/claude-code/sdk), which launches your installed CLI (so it uses your existing authentication). When you run a prompt or send a chat message, the CLI sends your content and relevant vault files to Anthropic's API for processing. No data is sent by the plugin itself — all network communication is handled by the CLI.
 
 - **Account required**: You need an authenticated Anthropic account with billing to use the Claude Code CLI.
 - **What is sent**: Prompt file contents, chat messages, vault file contents read by Claude during a run, and any system prompt from your `CLAUDE.md` file.
@@ -204,18 +206,22 @@ Configure the plugin in Obsidian Settings > Claude Vault Assistant:
 
 - **`src/main.ts`** — Plugin entry point, registers commands and views
 - **`src/settings.ts`** — Plugin settings interface and settings tab
-- **`src/claude-runner.ts`** — Spawns Claude CLI as a child process (one-off prompts)
-- **`src/stream-parser.ts`** — Parses streamed JSON output from the CLI
-- **`src/output-view.ts`** — Sidebar output pane with markdown rendering and history tab
+- **`src/chat-session.ts`** — Claude Agent SDK driver shared by both one-off runs and the interactive chat: builds options, streams SDK messages, and bridges tool approvals
+- **`src/prompt-runner.ts`** — Drives a single-turn one-off prompt run on top of `chat-session` (replaces the old child-process runner)
+- **`src/output-view.ts`** — Sidebar output pane with markdown rendering, history tab, and tool-approval prompts
 - **`src/run-history.ts`** — Run history storage, retrieval, and pruning logic
 - **`src/prompt-scanner.ts`** — Scans vault root for PROMPT-*.md files
 - **`src/frontmatter.ts`** — Parses YAML frontmatter overrides from prompt files
 - **`src/prompt-picker.ts`** — Modal for selecting a prompt to run
 - **`src/adhoc-prompt-modal.ts`** — Modal for typing ad-hoc prompts
 - **`src/vault-refresher.ts`** — Refreshes modified files after a run
-- **`src/chat-session.ts`** — Drives the interactive multi-turn chat via the Claude Agent SDK, with the in-chat tool-approval bridge
 - **`src/chat-view.ts`** — Sidebar chat pane: transcript, input box, and permission cards
-- **`src/env-resolver.ts`** — Harvests the login-shell environment so the SDK-spawned CLI sees the same env as the one-off runner
+- **`src/permission-card.ts`** — Shared tool-approval card rendering used by both the output and chat views
+- **`src/permission-types.ts`** — Shared permission contract (decision and request types)
+- **`src/run-types.ts`** — Shared `RunScope` type (vault vs active note)
+- **`src/system-prompt.ts`** — The Obsidian system prompt appended on every run
+- **`src/env-resolver.ts`** — Harvests the login-shell environment so the SDK-launched CLI sees your normal PATH and API tokens
+- **`src/electron-compat.ts`** — Electron renderer shim so the Agent SDK runs inside Obsidian
 - **`src/activity-lock.ts`** — Shared gate so a one-off run and a chat turn never run at the same time
 - **`src/tool-render.ts`** — Shared tool-call rendering used by both the output and chat views
 

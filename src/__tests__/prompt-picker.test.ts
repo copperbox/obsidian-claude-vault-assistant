@@ -176,6 +176,29 @@ describe("ScopePickerModal", () => {
 		expect(results).toHaveLength(1);
 		expect(results[0]!.scope).toBe("note");
 	});
+
+	it("always includes the chat option when onOpenChat is provided, even with no active note", () => {
+		const modal = new ScopePickerModal({} as never, false, vi.fn(), vi.fn());
+		const suggestions = modal.getSuggestions("");
+		expect(suggestions).toHaveLength(2);
+		expect(suggestions[1]!.action).toBe("chat");
+	});
+
+	it("omits the chat option when onOpenChat is not provided", () => {
+		const modal = new ScopePickerModal({} as never, true, vi.fn());
+		const suggestions = modal.getSuggestions("");
+		expect(suggestions.every((s) => s.action === "scope")).toBe(true);
+	});
+
+	it("calls onOpenChat (not onSelect) when the chat option is chosen", () => {
+		const onSelect = vi.fn();
+		const onOpenChat = vi.fn();
+		const modal = new ScopePickerModal({} as never, true, onSelect, onOpenChat);
+		const chat = modal.getSuggestions("").find((s) => s.action === "chat")!;
+		modal.onChooseSuggestion(chat);
+		expect(onOpenChat).toHaveBeenCalledOnce();
+		expect(onSelect).not.toHaveBeenCalled();
+	});
 });
 
 describe("formatOverrideBadges", () => {

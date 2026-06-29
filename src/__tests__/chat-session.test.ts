@@ -123,6 +123,37 @@ describe("buildChatOptions", () => {
 		expect(opts.model).toBeUndefined();
 		expect(opts.extraArgs).toBeUndefined();
 	});
+
+	it("appends an extra system prompt after the wiki-link prompt", () => {
+		const opts = buildChatOptions({
+			vaultPath: "/vault",
+			settings: { ...DEFAULT_SETTINGS },
+			env,
+			canUseTool: async () => ({ behavior: "allow" }),
+			extraSystemPrompt: "Vault house rules.",
+		});
+		const sp = opts.systemPrompt as { append?: string };
+		expect(sp.append).toContain("[[wiki links]]");
+		expect(sp.append).toContain("Vault house rules.");
+		// The extra prompt comes after the base prompt.
+		expect(sp.append?.indexOf("[[wiki links]]") ?? -1).toBeLessThan(
+			sp.append?.indexOf("Vault house rules.") ?? -1
+		);
+	});
+
+	it("adds the no-session-persistence flag, composing with budget", () => {
+		const opts = buildChatOptions({
+			vaultPath: "/vault",
+			settings: { ...DEFAULT_SETTINGS, maxBudget: 2 },
+			env,
+			canUseTool: async () => ({ behavior: "allow" }),
+			disableSessionPersistence: true,
+		});
+		expect(opts.extraArgs).toEqual({
+			"max-budget-usd": "2",
+			"no-session-persistence": null,
+		});
+	});
 });
 
 describe("ChatSession", () => {
@@ -219,6 +250,7 @@ describe("ChatSession", () => {
 			durationMs: 1234,
 			tokens: undefined,
 			isError: false,
+			subtype: "success",
 		});
 		expect(callbacks.onTurnEnd).toHaveBeenCalledOnce();
 		expect(session.isTurnActive).toBe(false);

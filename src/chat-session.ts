@@ -7,10 +7,19 @@ import type {
 	SDKUserMessage,
 } from "@anthropic-ai/claude-agent-sdk";
 import type { PluginSettings } from "./settings";
-import { PLUGIN_SYSTEM_PROMPT } from "./claude-runner";
+import { PLUGIN_SYSTEM_PROMPT } from "./system-prompt";
+import type {
+	PermissionDecision,
+	PermissionRequest,
+	RequestPermission,
+} from "./permission-types";
 import { resolveSpawnEnv } from "./env-resolver";
 import { patchElectronEventTarget } from "./electron-compat";
 import { sumUsageTokens } from "./format";
+
+// Re-export the permission contract so existing importers of these types from
+// "./chat-session" keep working; the canonical home is "./permission-types".
+export type { PermissionDecision, PermissionRequest, RequestPermission };
 
 /** A tool call surfaced to the chat transcript. */
 export interface ChatToolUse {
@@ -32,6 +41,8 @@ export interface ChatResult {
 	durationMs?: number;
 	tokens?: number;
 	isError: boolean;
+	/** Raw SDK result subtype, e.g. "success", "error_max_turns", "error_max_budget_usd". */
+	subtype?: string;
 }
 
 export interface ChatCallbacks {
@@ -44,21 +55,6 @@ export interface ChatCallbacks {
 	onTurnStart?: () => void;
 	onTurnEnd?: () => void;
 }
-
-/** What the user chose in the in-chat permission prompt. */
-export type PermissionDecision = "once" | "session" | "deny";
-
-export interface PermissionRequest {
-	toolName: string;
-	input: Record<string, unknown>;
-	toolUseId: string;
-	title?: string;
-	description?: string;
-}
-
-export type RequestPermission = (
-	req: PermissionRequest
-) => Promise<PermissionDecision>;
 
 export type QueryFn = (params: {
 	prompt: AsyncIterable<SDKUserMessage>;
@@ -74,6 +70,10 @@ export interface ChatSessionConfig {
 	queryFn?: QueryFn;
 	/** Injectable for tests; defaults to the login-shell env resolver. */
 	resolveEnv?: () => Record<string, string>;
+	/** Extra text appended after PLUGIN_SYSTEM_PROMPT (e.g. vault CLAUDE.md). */
+	extraSystemPrompt?: string;
+	/** Pass --no-session-persistence so the run leaves no stored session. */
+	disableSessionPersistence?: boolean;
 }
 
 /**
@@ -87,8 +87,23 @@ export function buildChatOptions(params: {
 	settings: PluginSettings;
 	env: Record<string, string>;
 	canUseTool: CanUseTool;
+	/** Extra text appended after PLUGIN_SYSTEM_PROMPT (e.g. vault CLAUDE.md). */
+	extraSystemPrompt?: string;
+	/** Pass --no-session-persistence so the run leaves no stored session. */
+	disableSessionPersistence?: boolean;
 }): Options {
-	const { vaultPath, settings, env, canUseTool } = params;
+	const {
+		vaultPath,
+		settings,
+		env,
+		canUseTool,
+		extraSystemPrompt,
+		disableSessionPersistence,
+	} = params;
+
+	const append = extraSystemPrompt
+		? `${PLUGIN_SYSTEM_PROMPT}\n\n${extraSystemPrompt}`
+		: PLUGIN_SYSTEM_PROMPT;
 
 	const options: Options = {
 		cwd: vaultPath,
@@ -98,7 +113,7 @@ export function buildChatOptions(params: {
 		systemPrompt: {
 			type: "preset",
 			preset: "claude_code",
-			append: PLUGIN_SYSTEM_PROMPT,
+			append,
 		},
 		canUseTool,
 		env,
@@ -111,9 +126,18 @@ export function buildChatOptions(params: {
 	if (settings.modelOverride) {
 		options.model = settings.modelOverride;
 	}
+
+	const extraArgs: Record<string, string | null> = {};
 	if (settings.maxBudget !== null && settings.maxBudget > 0) {
 		// No native budget option; pass the CLI flag through.
-		options.extraArgs = { "max-budget-usd": String(settings.maxBudget) };
+		extraArgs["max-budget-usd"] = String(settings.maxBudget);
+	}
+	if (disableSessionPersistence) {
+		// Valueless CLI flag (null => no value emitted).
+		extraArgs["no-session-persistence"] = null;
+	}
+	if (Object.keys(extraArgs).length > 0) {
+		options.extraArgs = extraArgs;
 	}
 
 	return options;
@@ -214,6 +238,8 @@ export class ChatSession {
 			settings: this.config.settings,
 			env,
 			canUseTool: this.canUseTool,
+			extraSystemPrompt: this.config.extraSystemPrompt,
+			disableSessionPersistence: this.config.disableSessionPersistence,
 		});
 
 		this.query = await this.queryFn({ prompt: this.inputQueue, options });
@@ -398,6 +424,7 @@ export class ChatSession {
 			durationMs: asNumber(data["duration_ms"]),
 			tokens: sumUsageTokens(data["usage"]),
 			isError: data["is_error"] === true || data["subtype"] !== "success",
+			subtype: asString(data["subtype"]),
 		});
 		this.endTurn();
 	}

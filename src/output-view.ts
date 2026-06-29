@@ -10,6 +10,12 @@ import {
 	renderToolCall,
 	renderToolResult,
 } from "./tool-render";
+import {
+	renderPermissionCard,
+	type PermissionCardHandle,
+} from "./permission-card";
+import type { PermissionDecision, PermissionRequest } from "./permission-types";
+import { labelCodeBlocks } from "./code-block";
 
 export const VIEW_TYPE_CLAUDE_OUTPUT = "claude-vault-output";
 
@@ -53,6 +59,7 @@ export class ClaudeOutputView extends ItemView {
 	private onClearHistory: (() => void) | null = null;
 
 	private toolCallEls: Map<string, ToolCallEls> = new Map();
+	private pendingCards: Set<PermissionCardHandle> = new Set();
 
 	constructor(leaf: WorkspaceLeaf) {
 		super(leaf);
@@ -122,6 +129,8 @@ export class ClaudeOutputView extends ItemView {
 	}
 
 	onClose(): Promise<void> {
+		// Resolve any awaited permission prompt so the run's canUseTool unblocks.
+		this.cancelPendingPermissions("deny");
 		if (this.renderTimer) {
 			window.clearTimeout(this.renderTimer);
 			this.renderTimer = null;
@@ -311,6 +320,8 @@ export class ClaudeOutputView extends ItemView {
 	}
 
 	clear(): void {
+		// Resolve any open permission prompts before their DOM is removed.
+		this.cancelPendingPermissions("deny");
 		if (this.outputEl) {
 			this.outputEl.empty();
 		}
@@ -403,6 +414,42 @@ export class ClaudeOutputView extends ItemView {
 		this.scrollToBottom();
 	}
 
+	/**
+	 * Render an interactive tool-permission prompt in the output and resolve with
+	 * the user's decision. Used by a one-off run for non-whitelisted tools.
+	 */
+	promptPermission(req: PermissionRequest): Promise<PermissionDecision> {
+		return new Promise((resolve) => {
+			if (!this.outputEl) {
+				resolve("deny");
+				return;
+			}
+			// Close the current markdown block so the card renders as its own
+			// element (mirrors showToolUse).
+			this.flushRender();
+			this.markdownEl = null;
+			this.markdownContent = "";
+
+			const handle = renderPermissionCard(
+				this.outputEl,
+				req,
+				(decision) => {
+					this.pendingCards.delete(handle);
+					resolve(decision);
+				},
+				{ sessionScopeNoun: "run" }
+			);
+			this.pendingCards.add(handle);
+			this.scrollToBottom();
+		});
+	}
+
+	/** Force-resolve any open permission prompts (e.g. on Stop or view close). */
+	cancelPendingPermissions(decision: PermissionDecision = "deny"): void {
+		for (const handle of [...this.pendingCards]) handle.cancel(decision);
+		this.pendingCards.clear();
+	}
+
 	showExitCode(code: number | null): void {
 		if (!this.outputEl) return;
 		this.flushRender();
@@ -433,14 +480,18 @@ export class ClaudeOutputView extends ItemView {
 
 	private renderMarkdown(): void {
 		if (!this.markdownEl || !this.markdownContent) return;
-		this.markdownEl.empty();
+		const el = this.markdownEl;
+		el.empty();
 		void MarkdownRenderer.render(
 			this.app,
 			this.markdownContent,
-			this.markdownEl,
+			el,
 			"/",
 			this
-		);
+		).then(() => {
+			labelCodeBlocks(el);
+			this.scrollToBottom();
+		});
 		this.scrollToBottom();
 	}
 

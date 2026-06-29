@@ -1,4 +1,4 @@
-import type { RunScope } from "./claude-runner";
+import type { RunScope } from "./run-types";
 
 export interface RunHistoryEntry {
 	id: string;

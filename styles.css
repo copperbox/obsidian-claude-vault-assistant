@@ -157,11 +157,55 @@
 	margin-bottom: 0;
 }
 
-.claude-output-markdown pre {
+/* Fenced code blocks in the output and chat panes. Obsidian's reading-view
+   code frame (background, border, padding) is scoped to .markdown-rendered,
+   which these panes are not inside -- so we draw the frame here, making it
+   clear where each block starts and stops. */
+.claude-output-markdown pre,
+.claude-chat-msg-assistant pre {
+	position: relative;
+	margin-top: 0.4em;
+	margin-bottom: 0.4em;
+	padding: 0.65em 0.8em;
+	background-color: var(--code-background);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 6px;
+	font-family: var(--font-monospace);
 	white-space: pre-wrap;
 	word-wrap: break-word;
-	margin-top: 0.25em;
-	margin-bottom: 0.25em;
+	overflow-x: auto;
+}
+
+/* The syntax-highlighted <code> inside a block shouldn't draw its own box. */
+.claude-output-markdown pre code,
+.claude-chat-msg-assistant pre code {
+	background: none;
+	padding: 0;
+	border: none;
+	white-space: inherit;
+}
+
+/* Language label (added by labelCodeBlocks) -- a small heading in the top-right
+   of a fenced block so it's clear what the syntax highlighting is for. The
+   extra top padding reserves a strip for it so it never overlaps the code. */
+.claude-output-markdown pre.claude-has-lang,
+.claude-chat-msg-assistant pre.claude-has-lang {
+	padding-top: 1.9em;
+}
+
+.claude-code-lang {
+	position: absolute;
+	top: 4px;
+	right: 6px;
+	padding: 0 6px;
+	font-family: var(--font-monospace);
+	font-size: var(--font-smallest);
+	line-height: 1.5;
+	color: var(--text-muted);
+	background-color: var(--background-primary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 4px;
+	pointer-events: none;
 }
 
 .claude-tool-call {
