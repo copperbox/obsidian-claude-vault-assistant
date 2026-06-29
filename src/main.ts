@@ -5,12 +5,18 @@ import {
 	parseSettings,
 	type PluginSettings,
 } from "./settings";
-import { ClaudeRunner, ClaudeRunnerError, type RunScope } from "./claude-runner";
+import { PromptRunner } from "./prompt-runner";
+import type { RunScope } from "./run-types";
 import { scanPromptFiles, readPromptContent } from "./prompt-scanner";
 import { PromptPickerModal, ScopePickerModal } from "./prompt-picker";
 import { AdhocPromptModal } from "./adhoc-prompt-modal";
 import { ClaudeOutputView, VIEW_TYPE_CLAUDE_OUTPUT } from "./output-view";
-import { StreamLineBuffer, parseStreamLine } from "./stream-parser";
+import {
+	ClaudeChatView,
+	VIEW_TYPE_CLAUDE_CHAT,
+	type ChatViewDeps,
+} from "./chat-view";
+import { ActivityLock } from "./activity-lock";
 import { VaultRefresher } from "./vault-refresher";
 import { parsePromptFrontmatter, mergeOverrides, hasOverrides } from "./frontmatter";
 import {
@@ -27,7 +33,9 @@ interface PluginData {
 export default class ClaudeVaultAssistant extends Plugin {
 	settings: PluginSettings = DEFAULT_SETTINGS;
 	history: RunHistoryEntry[] = [];
-	runner: ClaudeRunner = new ClaudeRunner();
+	promptRunner: PromptRunner = new PromptRunner();
+	/** Shared gate so a one-off run and a chat turn never run at the same time. */
+	lock: ActivityLock = new ActivityLock();
 	private ribbonIconEl: HTMLElement | null = null;
 
 	async onload() {
@@ -39,11 +47,21 @@ export default class ClaudeVaultAssistant extends Plugin {
 			(leaf) => new ClaudeOutputView(leaf)
 		);
 
+		this.registerView(VIEW_TYPE_CLAUDE_CHAT, (leaf) => {
+			const view = new ClaudeChatView(leaf);
+			view.setDeps(this.chatDeps());
+			return view;
+		});
+
 		this.ribbonIconEl = this.addRibbonIcon(
 			"bot",
 			"Run Claude prompt",
 			() => this.openScopePickerAndRun()
 		);
+
+		this.addRibbonIcon("message-square", "Open Claude chat", () => {
+			void this.activateChatView();
+		});
 
 		this.addCommand({
 			id: "run-vault-prompt",
@@ -68,9 +86,9 @@ export default class ClaudeVaultAssistant extends Plugin {
 			id: "stop-claude",
 			name: "Stop Claude",
 			checkCallback: (checking) => {
-				if (!this.runner.isRunning) return false;
+				if (!this.promptRunner.isRunning) return false;
 				if (!checking) {
-					this.runner.stop();
+					this.promptRunner.stop();
 					new Notice("Claude run stopped.");
 				}
 				return true;
@@ -88,9 +106,25 @@ export default class ClaudeVaultAssistant extends Plugin {
 			name: "Open Claude output",
 			callback: () => this.activateOutputView(),
 		});
+
+		this.addCommand({
+			id: "open-chat",
+			name: "Open Claude chat",
+			callback: () => {
+				void this.activateChatView();
+			},
+		});
 	}
 
-	onunload() {}
+	onunload() {
+		// Tear down any live chat subprocess so it doesn't outlive the plugin.
+		for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_CLAUDE_CHAT)) {
+			const view = leaf.view;
+			if (view instanceof ClaudeChatView) {
+				void view.shutdown();
+			}
+		}
+	}
 
 	private setRibbonRunning(running: boolean): void {
 		if (!this.ribbonIconEl) return;
@@ -135,7 +169,8 @@ export default class ClaudeVaultAssistant extends Plugin {
 		const picker = new ScopePickerModal(
 			this.app,
 			hasActiveNote,
-			(scope) => { void this.openPickerAndRun(scope); }
+			(scope) => { void this.openPickerAndRun(scope); },
+			() => { void this.activateChatView(); }
 		);
 		picker.open();
 	}
@@ -198,6 +233,11 @@ export default class ClaudeVaultAssistant extends Plugin {
 		rawPromptContent: string,
 		adhocPrompt?: string
 	): Promise<void> {
+		if (this.lock.isBusy) {
+			new Notice(`Claude is busy: ${this.lock.label ?? "another run"}.`);
+			return;
+		}
+
 		const view = await this.activateOutputView();
 		if (!view) {
 			new Notice("Could not open Claude output pane.");
@@ -212,7 +252,10 @@ export default class ClaudeVaultAssistant extends Plugin {
 		view.clear();
 		view.switchTab("output");
 		view.setOnStop(() => {
-			this.runner.stop();
+			// Deny any pending permission prompt so the awaited canUseTool
+			// resolves and stop() can unwind the in-flight turn.
+			view.cancelPendingPermissions("deny");
+			this.promptRunner.stop();
 			view.setStatus("stopped");
 			this.setRibbonRunning(false);
 			new Notice("Claude run stopped.");
@@ -249,129 +292,122 @@ export default class ClaudeVaultAssistant extends Plugin {
 		// Accumulate output text for history
 		let accumulatedOutput = "";
 		let lastCostUsd: number | undefined;
+		let lastTokens: number | undefined;
 
-		try {
-			const child = this.runner.run({
+		if (!this.lock.tryAcquire(`Prompt: ${promptName}`)) {
+			new Notice(`Claude is busy: ${this.lock.label ?? "another run"}.`);
+			view.setStatus("idle");
+			this.setRibbonRunning(false);
+			return;
+		}
+
+		const refresher = new VaultRefresher();
+
+		void this.promptRunner.run(
+			{
 				vaultPath,
-				promptContent,
 				settings: runSettings,
 				scope,
+				promptBody: promptContent,
 				activeNotePath,
-				systemPrompt,
-			});
-
-			const refresher = new VaultRefresher();
-			let lastStopReason: string | undefined;
-
-			const lineBuffer = new StreamLineBuffer((line) => {
-				const event = parseStreamLine(line);
-				if (!event) return;
-				switch (event.type) {
-					case "text":
-						view.appendText(event.text);
-						accumulatedOutput += event.text;
-						if (!event.text.endsWith("\n")) {
-							accumulatedOutput += "\n\n";
-						}
-						break;
-					case "tool_use":
-						view.showToolUse(event.name, event.filePath, event.input, event.id);
-						refresher.trackToolUse(event.name, event.filePath);
-						break;
-					case "tool_result":
-						view.showToolResult(event.toolUseId, event.isError, event.content);
-						break;
-					case "result":
-						lastStopReason = event.stopReason;
-						lastCostUsd = event.costUsd;
-						view.showResult(event.costUsd, event.durationMs);
-						break;
-				}
-			});
-
-			child.stdout?.on("data", (chunk: Buffer) => {
-				lineBuffer.push(chunk.toString());
-			});
-
-			child.stderr?.on("data", (chunk: Buffer) => {
-				view.showError(chunk.toString());
-			});
-
-			child.on("close", (code: number | null) => {
-				lineBuffer.flush();
-				view.showExitCode(code);
-				this.setRibbonRunning(false);
-
-				const durationMs = Date.now() - runStartTime;
-				const durationSec = (durationMs / 1000).toFixed(1);
-				let status: string;
-				let historyStatus: RunHistoryEntry["status"];
-
-				// Only update status if not already stopped by user
-				if (view.getStatus() !== "stopped") {
-					const isLimit = lastStopReason === "max_turns" || lastStopReason === "budget_exceeded";
-					if (isLimit) {
-						const reason = lastStopReason === "max_turns" ? "max turns" : "budget";
-						view.showStatus(`Run stopped: ${reason} limit reached.`);
-						view.setStatus("limit");
-						status = "limit reached";
-						historyStatus = "limit";
-					} else if (code === 0 || code === null) {
-						view.setStatus("complete");
-						status = "complete";
-						historyStatus = "success";
-					} else {
-						view.setStatus("error");
-						status = "error";
-						historyStatus = "error";
+				extraSystemPrompt: systemPrompt,
+				requestPermission: (req) => view.promptPermission(req),
+			},
+			{
+				onAssistantText: (text) => {
+					view.appendText(text);
+					accumulatedOutput += text;
+					if (!text.endsWith("\n")) {
+						accumulatedOutput += "\n\n";
 					}
-					this.notifyRunComplete(promptName, status, durationSec);
-				} else {
-					historyStatus = "stopped";
-				}
+				},
+				onToolUse: (tool) => {
+					view.showToolUse(tool.name, tool.filePath, tool.input, tool.id);
+					refresher.trackToolUse(tool.name, tool.filePath);
+				},
+				onToolResult: (result) => {
+					view.showToolResult(result.toolUseId, result.isError, result.content);
+				},
+				onResult: (result) => {
+					lastCostUsd = result.costUsd;
+					lastTokens = result.tokens;
+					view.showResult(result.costUsd, result.durationMs, result.tokens);
+				},
+				onError: (message) => {
+					view.showError(message);
+				},
+				onComplete: (outcome) => {
+					this.setRibbonRunning(false);
+					this.lock.release();
+					view.cancelPendingPermissions("deny");
 
-				// Record history entry
-				const entry: RunHistoryEntry = {
-					id: generateEntryId(),
-					promptName,
-					scope,
-					timestamp: runStartTime,
-					durationMs,
-					status: historyStatus,
-					costUsd: lastCostUsd,
-					notePath: activeNotePath,
-					output: accumulatedOutput,
-					...(adhocPrompt !== undefined ? { prompt: adhocPrompt } : {}),
-				};
-				this.history = addEntry(
-					this.history,
-					entry,
-					this.settings.maxHistoryEntries
-				);
-				view.setHistory(this.history);
-				this.saveHistory().catch((err) => {
-					console.error("Failed to save run history:", err);
-				});
+					const durationMs = Date.now() - runStartTime;
+					const durationSec = (durationMs / 1000).toFixed(1);
+					let status: string;
+					let historyStatus: RunHistoryEntry["status"];
 
-				// Refresh any files modified by Claude
-				refresher.refreshModifiedFiles(this.app).catch((err) => {
-					console.error("Failed to refresh vault files:", err);
-				});
-			});
+					// Preserve a user-initiated stop; otherwise map the outcome.
+					if (view.getStatus() !== "stopped" && outcome.status !== "stopped") {
+						if (outcome.status === "limit") {
+							const reason =
+								outcome.limit === "max_turns" ? "max turns" : "budget";
+							view.showStatus(`Run stopped: ${reason} limit reached.`);
+							view.setStatus("limit");
+							status = "limit reached";
+							historyStatus = "limit";
+						} else if (outcome.status === "error") {
+							view.setStatus("error");
+							status = "error";
+							historyStatus = "error";
+						} else {
+							view.setStatus("complete");
+							status = "complete";
+							historyStatus = "success";
+						}
+						this.notifyRunComplete(promptName, status, durationSec);
+					} else {
+						historyStatus = "stopped";
+					}
 
-			child.on("runner-error", (err: Error) => {
-				view.showError(err.message);
-				view.setStatus("error");
-				this.setRibbonRunning(false);
-			});
-		} catch (err) {
-			if (err instanceof ClaudeRunnerError) {
-				view.showError(err.message);
-				view.setStatus("error");
-			} else {
-				throw err;
+					// Record history entry
+					const entry: RunHistoryEntry = {
+						id: generateEntryId(),
+						promptName,
+						scope,
+						timestamp: runStartTime,
+						durationMs,
+						status: historyStatus,
+						costUsd: lastCostUsd,
+						tokens: lastTokens,
+						notePath: activeNotePath,
+						output: accumulatedOutput,
+						...(adhocPrompt !== undefined ? { prompt: adhocPrompt } : {}),
+					};
+					this.history = addEntry(
+						this.history,
+						entry,
+						this.settings.maxHistoryEntries
+					);
+					view.setHistory(this.history);
+					this.saveHistory().catch((err) => {
+						console.error("Failed to save run history:", err);
+					});
+
+					// Refresh any files modified by Claude
+					refresher.refreshModifiedFiles(this.app).catch((err) => {
+						console.error("Failed to refresh vault files:", err);
+					});
+				},
 			}
-		}
+		).catch((err) => {
+			// PromptRunner.run reports run failures via onError/onComplete; this
+			// only guards an unexpected rejection so the lock is never stuck.
+			this.setRibbonRunning(false);
+			this.lock.release();
+			view.cancelPendingPermissions("deny");
+			view.showError(err instanceof Error ? err.message : String(err));
+			view.setStatus("error");
+		});
 	}
 
 	private notifyRunComplete(promptName: string, status: string, durationSec: string): void {
@@ -407,6 +443,42 @@ export default class ClaudeVaultAssistant extends Plugin {
 		await this.app.workspace.revealLeaf(leaf);
 		const view = leaf.view as ClaudeOutputView;
 		this.wireHistoryCallbacks(view);
+		return view;
+	}
+
+	private getVaultPath(): string | null {
+		return (
+			(this.app.vault.adapter as { basePath?: string }).basePath ?? null
+		);
+	}
+
+	private chatDeps(): ChatViewDeps {
+		return {
+			getSettings: () => this.settings,
+			getVaultPath: () => this.getVaultPath(),
+			lock: this.lock,
+		};
+	}
+
+	async activateChatView(): Promise<ClaudeChatView | null> {
+		const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE_CLAUDE_CHAT);
+		if (existing.length > 0) {
+			const leaf = existing[0]!;
+			await this.app.workspace.revealLeaf(leaf);
+			const view = leaf.view as ClaudeChatView;
+			view.setDeps(this.chatDeps());
+			return view;
+		}
+
+		const leaf = this.app.workspace.getRightLeaf(false);
+		if (!leaf) return null;
+		await leaf.setViewState({
+			type: VIEW_TYPE_CLAUDE_CHAT,
+			active: true,
+		});
+		await this.app.workspace.revealLeaf(leaf);
+		const view = leaf.view as ClaudeChatView;
+		view.setDeps(this.chatDeps());
 		return view;
 	}
 

@@ -158,6 +158,11 @@ describe("ClaudeOutputView", () => {
 			expect(getRenderedMarkdown(0)).toBe("response text");
 		});
 
+		it("showResult accepts an optional token count", () => {
+			view.showResult(0.0234, 4500, 12345);
+			// Should not throw; breakdown formatting is covered by format.test.ts.
+		});
+
 		it("flushes pending render on showExitCode", () => {
 			view.appendText("partial");
 			view.showExitCode(0);
@@ -332,6 +337,7 @@ describe("ClaudeOutputView", () => {
 				scope: "note",
 				status: "error",
 				costUsd: 0.05,
+				tokens: 12345,
 				notePath: "notes/test.md",
 			});
 			view.setHistory([entry]);

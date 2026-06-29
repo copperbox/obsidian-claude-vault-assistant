@@ -28,4 +28,36 @@ describe("styles.css text selection", () => {
 		expect(body).toContain("user-select: text");
 		expect(body).toContain("-webkit-user-select: text");
 	});
+
+	it("enables text selection on the chat transcript", () => {
+		const body = ruleBody(".claude-chat-transcript");
+		expect(body).toContain("user-select: text");
+		expect(body).toContain("-webkit-user-select: text");
+	});
+
+	it("enables text selection on the chat input", () => {
+		const body = ruleBody(".claude-chat-input");
+		expect(body).toContain("user-select: text");
+		expect(body).toContain("-webkit-user-select: text");
+	});
+});
+
+describe("styles.css code block frame", () => {
+	// Obsidian's reading-view code frame is scoped to .markdown-rendered, which
+	// the panes aren't inside. The shared pre rule (output + chat) must draw the
+	// frame so it's clear where a code block starts and stops.
+	it("frames fenced code blocks in the output and chat panes", () => {
+		const body = ruleBody(".claude-chat-msg-assistant pre");
+		expect(body).toContain("background-color: var(--code-background)");
+		expect(body).toContain("border:");
+		expect(body).toContain("border-radius:");
+		expect(body).toContain("padding:");
+	});
+
+	it("positions the language label in the corner of the block", () => {
+		const body = ruleBody(".claude-code-lang");
+		expect(body).toContain("position: absolute");
+		expect(body).toContain("top:");
+		expect(body).toContain("right:");
+	});
 });

@@ -1,4 +1,4 @@
-import type { RunScope } from "./claude-runner";
+import type { RunScope } from "./run-types";
 
 export interface RunHistoryEntry {
 	id: string;
@@ -8,6 +8,7 @@ export interface RunHistoryEntry {
 	durationMs: number;
 	status: "success" | "error" | "stopped" | "limit";
 	costUsd?: number;
+	tokens?: number;
 	notePath?: string;
 	output: string;
 	prompt?: string;

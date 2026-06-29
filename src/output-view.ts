@@ -4,6 +4,18 @@ import {
 	formatDuration,
 	formatTimestamp,
 } from "./run-history";
+import { formatResultMeta } from "./format";
+import {
+	type ToolCallEls,
+	renderToolCall,
+	renderToolResult,
+} from "./tool-render";
+import {
+	renderPermissionCard,
+	type PermissionCardHandle,
+} from "./permission-card";
+import type { PermissionDecision, PermissionRequest } from "./permission-types";
+import { labelCodeBlocks } from "./code-block";
 
 export const VIEW_TYPE_CLAUDE_OUTPUT = "claude-vault-output";
 
@@ -46,11 +58,8 @@ export class ClaudeOutputView extends ItemView {
 	private historyEntries: RunHistoryEntry[] = [];
 	private onClearHistory: (() => void) | null = null;
 
-	private toolCallEls: Map<string, {
-		summary: HTMLElement;
-		details: HTMLElement;
-		statusEl: HTMLElement;
-	}> = new Map();
+	private toolCallEls: Map<string, ToolCallEls> = new Map();
+	private pendingCards: Set<PermissionCardHandle> = new Set();
 
 	constructor(leaf: WorkspaceLeaf) {
 		super(leaf);
@@ -120,6 +129,8 @@ export class ClaudeOutputView extends ItemView {
 	}
 
 	onClose(): Promise<void> {
+		// Resolve any awaited permission prompt so the run's canUseTool unblocks.
+		this.cancelPendingPermissions("deny");
 		if (this.renderTimer) {
 			window.clearTimeout(this.renderTimer);
 			this.renderTimer = null;
@@ -266,8 +277,8 @@ export class ClaudeOutputView extends ItemView {
 			this.flushRender();
 		}
 
-		if (entry.costUsd !== undefined || entry.durationMs) {
-			this.showResult(entry.costUsd, entry.durationMs);
+		if (entry.costUsd !== undefined || entry.durationMs || entry.tokens !== undefined) {
+			this.showResult(entry.costUsd, entry.durationMs, entry.tokens);
 		}
 	}
 
@@ -309,6 +320,8 @@ export class ClaudeOutputView extends ItemView {
 	}
 
 	clear(): void {
+		// Resolve any open permission prompts before their DOM is removed.
+		this.cancelPendingPermissions("deny");
 		if (this.outputEl) {
 			this.outputEl.empty();
 		}
@@ -359,41 +372,10 @@ export class ClaudeOutputView extends ItemView {
 		this.markdownEl = null;
 		this.markdownContent = "";
 
-		const details = this.outputEl.createEl("details", {
-			cls: "claude-tool-call",
-		});
-
-		const summary = details.createEl("summary", {
-			cls: "claude-tool-call-summary",
-		});
-
-		const statusEl = summary.createSpan({
-			cls: "claude-tool-call-status claude-tool-call-status-pending",
-			text: "…",
-		});
-		statusEl.setAttr("aria-label", "pending");
-
-		summary.createSpan({
-			text: toolName,
-			cls: "claude-tool-call-name",
-		});
-		if (filePath) {
-			summary.createSpan({
-				text: filePath,
-				cls: "claude-tool-call-path",
-			});
-		}
-
-		if (input && Object.keys(input).length > 0) {
-			const body = details.createDiv({ cls: "claude-tool-call-input" });
-			const filtered = this.filterToolInput(toolName, input);
-			body.createEl("pre", {
-				text: JSON.stringify(filtered, null, 2),
-			});
-		}
+		const els = renderToolCall(this.outputEl, { toolName, filePath, input });
 
 		if (toolUseId) {
-			this.toolCallEls.set(toolUseId, { summary, details, statusEl });
+			this.toolCallEls.set(toolUseId, els);
 		}
 
 		this.scrollToBottom();
@@ -403,66 +385,22 @@ export class ClaudeOutputView extends ItemView {
 		const entry = this.toolCallEls.get(toolUseId);
 		if (!entry) return;
 
-		const { summary, details, statusEl } = entry;
-
-		statusEl.removeClass("claude-tool-call-status-pending");
-		if (isError) {
-			statusEl.addClass("claude-tool-call-status-error");
-			statusEl.setText("✗");
-			statusEl.setAttr("aria-label", "error");
-			summary.addClass("claude-tool-call-summary-error");
-			details.setAttr("open", "");
-		} else {
-			statusEl.addClass("claude-tool-call-status-success");
-			statusEl.setText("✓");
-			statusEl.setAttr("aria-label", "success");
-		}
-
-		if (content) {
-			const resultEl = details.createDiv({
-				cls: isError
-					? "claude-tool-call-result claude-tool-call-result-error"
-					: "claude-tool-call-result",
-			});
-			resultEl.createEl("pre", { text: content });
-		}
+		renderToolResult(entry, isError, content);
 
 		this.toolCallEls.delete(toolUseId);
 		this.scrollToBottom();
 	}
 
-	private filterToolInput(toolName: string, input: Record<string, unknown>): Record<string, unknown> {
-		// For Write/Edit, omit large content/new_string fields to keep display concise
-		const omitKeys: Record<string, string[]> = {
-			Write: ["content"],
-			Edit: ["new_string", "old_string"],
-		};
-		const keysToOmit = omitKeys[toolName];
-		if (!keysToOmit) return input;
-
-		const filtered: Record<string, unknown> = {};
-		for (const [key, value] of Object.entries(input)) {
-			if (keysToOmit.includes(key) && typeof value === "string") {
-				filtered[key] = `(${value.length} chars)`;
-			} else {
-				filtered[key] = value;
-			}
-		}
-		return filtered;
-	}
-
-	showResult(costUsd?: number, durationMs?: number): void {
+	showResult(costUsd?: number, durationMs?: number, tokens?: number): void {
 		if (!this.outputEl) return;
 		this.flushRender();
 		this.markdownEl = null;
 		this.markdownContent = "";
 
-		if (costUsd !== undefined || durationMs !== undefined) {
-			const parts: string[] = [];
-			if (costUsd !== undefined) parts.push(`$${costUsd.toFixed(4)}`);
-			if (durationMs !== undefined) parts.push(`${(durationMs / 1000).toFixed(1)}s`);
+		const text = formatResultMeta({ costUsd, durationMs, tokens });
+		if (text) {
 			this.outputEl.createDiv({
-				text: parts.join(" · "),
+				text,
 				cls: "claude-output-stats",
 			});
 		}
@@ -474,6 +412,42 @@ export class ClaudeOutputView extends ItemView {
 		this.errorEl.setText(message);
 		this.errorEl.show();
 		this.scrollToBottom();
+	}
+
+	/**
+	 * Render an interactive tool-permission prompt in the output and resolve with
+	 * the user's decision. Used by a one-off run for non-whitelisted tools.
+	 */
+	promptPermission(req: PermissionRequest): Promise<PermissionDecision> {
+		return new Promise((resolve) => {
+			if (!this.outputEl) {
+				resolve("deny");
+				return;
+			}
+			// Close the current markdown block so the card renders as its own
+			// element (mirrors showToolUse).
+			this.flushRender();
+			this.markdownEl = null;
+			this.markdownContent = "";
+
+			const handle = renderPermissionCard(
+				this.outputEl,
+				req,
+				(decision) => {
+					this.pendingCards.delete(handle);
+					resolve(decision);
+				},
+				{ sessionScopeNoun: "run" }
+			);
+			this.pendingCards.add(handle);
+			this.scrollToBottom();
+		});
+	}
+
+	/** Force-resolve any open permission prompts (e.g. on Stop or view close). */
+	cancelPendingPermissions(decision: PermissionDecision = "deny"): void {
+		for (const handle of [...this.pendingCards]) handle.cancel(decision);
+		this.pendingCards.clear();
 	}
 
 	showExitCode(code: number | null): void {
@@ -506,14 +480,18 @@ export class ClaudeOutputView extends ItemView {
 
 	private renderMarkdown(): void {
 		if (!this.markdownEl || !this.markdownContent) return;
-		this.markdownEl.empty();
+		const el = this.markdownEl;
+		el.empty();
 		void MarkdownRenderer.render(
 			this.app,
 			this.markdownContent,
-			this.markdownEl,
+			el,
 			"/",
 			this
-		);
+		).then(() => {
+			labelCodeBlocks(el);
+			this.scrollToBottom();
+		});
 		this.scrollToBottom();
 	}
 

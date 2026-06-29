@@ -1,10 +1,12 @@
 import { type App, SuggestModal } from "obsidian";
-import type { RunScope } from "./claude-runner";
+import type { RunScope } from "./run-types";
 import type { PromptFile } from "./prompt-scanner";
 import type { PromptOverrides } from "./frontmatter";
 
 interface ScopeOption {
-	scope: RunScope;
+	action: "scope" | "chat";
+	/** Set for action "scope"; absent for "chat". */
+	scope?: RunScope;
 	label: string;
 	description: string;
 }
@@ -12,16 +14,20 @@ interface ScopeOption {
 export class ScopePickerModal extends SuggestModal<ScopeOption> {
 	private options: ScopeOption[];
 	private onSelect: (scope: RunScope) => void;
+	private onOpenChat?: () => void;
 
 	constructor(
 		app: App,
 		hasActiveNote: boolean,
-		onSelect: (scope: RunScope) => void
+		onSelect: (scope: RunScope) => void,
+		onOpenChat?: () => void
 	) {
 		super(app);
 		this.onSelect = onSelect;
+		this.onOpenChat = onOpenChat;
 		this.options = [
 			{
+				action: "scope",
 				scope: "vault",
 				label: "Run on Vault",
 				description: "Claude can read and edit any file in the vault",
@@ -29,12 +35,22 @@ export class ScopePickerModal extends SuggestModal<ScopeOption> {
 		];
 		if (hasActiveNote) {
 			this.options.push({
+				action: "scope",
 				scope: "note",
 				label: "Run on Active Note",
 				description: "Claude is constrained to the currently open note",
 			});
 		}
-		this.setPlaceholder("Choose scope…");
+		// When the caller supports it (the ribbon entry point), always offer
+		// opening the chat -- regardless of whether an active note exists.
+		if (onOpenChat) {
+			this.options.push({
+				action: "chat",
+				label: "Open Claude chat",
+				description: "Start a multi-turn conversation with Claude",
+			});
+		}
+		this.setPlaceholder(onOpenChat ? "Choose an action..." : "Choose scope...");
 	}
 
 	getSuggestions(query: string): ScopeOption[] {
@@ -51,7 +67,11 @@ export class ScopePickerModal extends SuggestModal<ScopeOption> {
 	}
 
 	onChooseSuggestion(option: ScopeOption): void {
-		this.onSelect(option.scope);
+		if (option.action === "chat") {
+			this.onOpenChat?.();
+			return;
+		}
+		if (option.scope) this.onSelect(option.scope);
 	}
 }
 
