@@ -288,6 +288,7 @@ export default class ClaudeVaultAssistant extends Plugin {
 		// Accumulate output text for history
 		let accumulatedOutput = "";
 		let lastCostUsd: number | undefined;
+		let lastTokens: number | undefined;
 
 		if (!this.lock.tryAcquire(`Prompt: ${promptName}`)) {
 			new Notice(`Claude is busy: ${this.lock.label ?? "another run"}.`);
@@ -330,7 +331,8 @@ export default class ClaudeVaultAssistant extends Plugin {
 					case "result":
 						lastStopReason = event.stopReason;
 						lastCostUsd = event.costUsd;
-						view.showResult(event.costUsd, event.durationMs);
+						lastTokens = event.tokens;
+						view.showResult(event.costUsd, event.durationMs, event.tokens);
 						break;
 				}
 			});
@@ -386,6 +388,7 @@ export default class ClaudeVaultAssistant extends Plugin {
 					durationMs,
 					status: historyStatus,
 					costUsd: lastCostUsd,
+					tokens: lastTokens,
 					notePath: activeNotePath,
 					output: accumulatedOutput,
 					...(adhocPrompt !== undefined ? { prompt: adhocPrompt } : {}),

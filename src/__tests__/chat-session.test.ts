@@ -217,10 +217,36 @@ describe("ChatSession", () => {
 			text: "done",
 			costUsd: 0.01,
 			durationMs: 1234,
+			tokens: undefined,
 			isError: false,
 		});
 		expect(callbacks.onTurnEnd).toHaveBeenCalledOnce();
 		expect(session.isTurnActive).toBe(false);
+	});
+
+	it("sums usage tokens into the result", async () => {
+		const session = makeSession();
+		await session.start();
+		session.send("hi");
+
+		fake.emit({
+			type: "result",
+			subtype: "success",
+			result: "done",
+			total_cost_usd: 0.01,
+			duration_ms: 1234,
+			usage: {
+				input_tokens: 10,
+				output_tokens: 20,
+				cache_read_input_tokens: 100,
+			},
+			is_error: false,
+		});
+		await flush();
+
+		expect(callbacks.onResult).toHaveBeenCalledWith(
+			expect.objectContaining({ tokens: 130 })
+		);
 	});
 
 	it("allows a tool once without caching when the user picks 'once'", async () => {

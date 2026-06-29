@@ -8,6 +8,7 @@ export interface RunHistoryEntry {
 	durationMs: number;
 	status: "success" | "error" | "stopped" | "limit";
 	costUsd?: number;
+	tokens?: number;
 	notePath?: string;
 	output: string;
 	prompt?: string;

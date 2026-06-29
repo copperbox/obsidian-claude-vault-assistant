@@ -13,6 +13,7 @@ import {
 	renderToolCall,
 	renderToolResult,
 } from "./tool-render";
+import { formatResultMeta } from "./format";
 
 export const VIEW_TYPE_CLAUDE_CHAT = "claude-vault-chat";
 
@@ -410,18 +411,15 @@ export class ClaudeChatView extends ItemView {
 	private addResultMeta(result: {
 		costUsd?: number;
 		durationMs?: number;
+		tokens?: number;
 		isError: boolean;
 	}): void {
 		if (!this.transcriptEl) return;
-		const parts: string[] = [];
-		if (result.costUsd !== undefined) parts.push(`$${result.costUsd.toFixed(4)}`);
-		if (result.durationMs !== undefined) {
-			parts.push(`${(result.durationMs / 1000).toFixed(1)}s`);
-		}
-		if (parts.length > 0) {
+		const text = formatResultMeta(result);
+		if (text) {
 			this.transcriptEl.createDiv({
 				cls: "claude-chat-result-meta",
-				text: parts.join(" - "),
+				text,
 			});
 		}
 		this.scrollToBottom();

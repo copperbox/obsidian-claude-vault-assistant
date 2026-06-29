@@ -4,6 +4,7 @@ import {
 	formatDuration,
 	formatTimestamp,
 } from "./run-history";
+import { formatResultMeta } from "./format";
 import {
 	type ToolCallEls,
 	renderToolCall,
@@ -267,8 +268,8 @@ export class ClaudeOutputView extends ItemView {
 			this.flushRender();
 		}
 
-		if (entry.costUsd !== undefined || entry.durationMs) {
-			this.showResult(entry.costUsd, entry.durationMs);
+		if (entry.costUsd !== undefined || entry.durationMs || entry.tokens !== undefined) {
+			this.showResult(entry.costUsd, entry.durationMs, entry.tokens);
 		}
 	}
 
@@ -379,18 +380,16 @@ export class ClaudeOutputView extends ItemView {
 		this.scrollToBottom();
 	}
 
-	showResult(costUsd?: number, durationMs?: number): void {
+	showResult(costUsd?: number, durationMs?: number, tokens?: number): void {
 		if (!this.outputEl) return;
 		this.flushRender();
 		this.markdownEl = null;
 		this.markdownContent = "";
 
-		if (costUsd !== undefined || durationMs !== undefined) {
-			const parts: string[] = [];
-			if (costUsd !== undefined) parts.push(`$${costUsd.toFixed(4)}`);
-			if (durationMs !== undefined) parts.push(`${(durationMs / 1000).toFixed(1)}s`);
+		const text = formatResultMeta({ costUsd, durationMs, tokens });
+		if (text) {
 			this.outputEl.createDiv({
-				text: parts.join(" · "),
+				text,
 				cls: "claude-output-stats",
 			});
 		}

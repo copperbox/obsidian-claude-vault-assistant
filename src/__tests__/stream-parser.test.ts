@@ -240,6 +240,29 @@ describe("parseStreamLine", () => {
 		});
 	});
 
+	it("parses result event with total_cost_usd and usage tokens", () => {
+		const line = JSON.stringify({
+			type: "result",
+			result: "Done!",
+			total_cost_usd: 0.0234,
+			duration_ms: 4500,
+			usage: {
+				input_tokens: 10,
+				output_tokens: 20,
+				cache_creation_input_tokens: 5,
+				cache_read_input_tokens: 100,
+			},
+		});
+		expect(parseStreamLine(line)).toEqual({
+			type: "result",
+			text: "Done!",
+			costUsd: 0.0234,
+			durationMs: 4500,
+			stopReason: undefined,
+			tokens: 135,
+		});
+	});
+
 	it("parses result event without cost/duration", () => {
 		const line = JSON.stringify({
 			type: "result",

@@ -103,7 +103,7 @@ There are four ways to run a prompt:
 3. **Command palette** — Use `Run Claude Prompt (Active Note)` to run scoped to the currently open note
 4. **Command palette** — Use `Run ad-hoc Claude prompt` to type a one-off prompt directly without creating a prompt file
 
-After selecting a prompt, Claude's output streams in real time into a sidebar pane. Tool calls (file reads, edits, etc.) are shown as collapsible sections beneath the output, each with a status badge (✓ success, ✗ error) once the result returns.
+After selecting a prompt, Claude's output streams in real time into a sidebar pane. Tool calls (file reads, edits, etc.) are shown as collapsible sections beneath the output, each with a status badge (✓ success, ✗ error) once the result returns. When the run finishes, a one-line breakdown shows the cost, elapsed time, and tokens used (e.g. `$0.0123 - 4.5s - 12,345 tokens`).
 
 ### Stopping a run
 
@@ -124,7 +124,7 @@ Open a multi-turn conversation with Claude inside Obsidian:
 1. **Ribbon icon** — Click the chat (message) icon in the left sidebar, or
 2. **Command palette** — Use `Open Claude chat`
 
-Type a message and press **Enter** to send (**Shift+Enter** for a newline). Claude's replies render as markdown, and tool calls appear inline as collapsible sections, the same as the output pane. The conversation keeps its context across turns -- one Claude process stays alive for the life of the chat.
+Type a message and press **Enter** to send (**Shift+Enter** for a newline). Claude's replies render as markdown, and tool calls appear inline as collapsible sections, the same as the output pane. After each turn, a one-line breakdown below the reply shows the cost, elapsed time, and tokens used (e.g. `$0.0123 - 4.5s - 12,345 tokens`). The conversation keeps its context across turns -- one Claude process stays alive for the life of the chat.
 
 **Tool approvals.** The chat starts with the same `Allowed tools` whitelist as one-off prompts. When Claude wants a tool that isn't on the whitelist, an approval card appears in the conversation with three choices:
 

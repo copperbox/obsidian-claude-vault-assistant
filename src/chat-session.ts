@@ -10,6 +10,7 @@ import type { PluginSettings } from "./settings";
 import { PLUGIN_SYSTEM_PROMPT } from "./claude-runner";
 import { resolveSpawnEnv } from "./env-resolver";
 import { patchElectronEventTarget } from "./electron-compat";
+import { sumUsageTokens } from "./format";
 
 /** A tool call surfaced to the chat transcript. */
 export interface ChatToolUse {
@@ -29,6 +30,7 @@ export interface ChatResult {
 	text?: string;
 	costUsd?: number;
 	durationMs?: number;
+	tokens?: number;
 	isError: boolean;
 }
 
@@ -394,6 +396,7 @@ export class ChatSession {
 			text: asString(data["result"]),
 			costUsd,
 			durationMs: asNumber(data["duration_ms"]),
+			tokens: sumUsageTokens(data["usage"]),
 			isError: data["is_error"] === true || data["subtype"] !== "success",
 		});
 		this.endTurn();

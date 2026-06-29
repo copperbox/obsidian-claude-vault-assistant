@@ -1,3 +1,5 @@
+import { sumUsageTokens } from "./format";
+
 export interface ParsedText {
 	type: "text";
 	text: string;
@@ -24,6 +26,7 @@ export interface ParsedResult {
 	costUsd?: number;
 	durationMs?: number;
 	stopReason?: string;
+	tokens?: number;
 }
 
 export type ParsedEvent = ParsedText | ParsedToolUse | ParsedToolResult | ParsedResult;
@@ -127,11 +130,18 @@ function parseResultEvent(data: Record<string, unknown>): ParsedResult | null {
 	const result = data["result"];
 	if (typeof result !== "string") return null;
 
-	const costUsd = typeof data["cost_usd"] === "number" ? data["cost_usd"] : undefined;
+	// The CLI emits `total_cost_usd`; older payloads used `cost_usd`.
+	const costUsd =
+		typeof data["total_cost_usd"] === "number"
+			? data["total_cost_usd"]
+			: typeof data["cost_usd"] === "number"
+				? data["cost_usd"]
+				: undefined;
 	const durationMs = typeof data["duration_ms"] === "number" ? data["duration_ms"] : undefined;
 	const stopReason = typeof data["stop_reason"] === "string" ? data["stop_reason"] : undefined;
+	const tokens = sumUsageTokens(data["usage"]);
 
-	return { type: "result", text: result, costUsd, durationMs, stopReason };
+	return { type: "result", text: result, costUsd, durationMs, stopReason, tokens };
 }
 
 export class StreamLineBuffer {
