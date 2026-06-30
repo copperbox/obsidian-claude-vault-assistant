@@ -103,7 +103,7 @@ There are four ways to run a prompt:
 3. **Command palette** — Use `Run Claude Prompt (Active Note)` to run scoped to the currently open note
 4. **Command palette** — Use `Run ad-hoc Claude prompt` to type a one-off prompt directly without creating a prompt file
 
-After selecting a prompt, Claude's output streams in real time into a sidebar pane. Tool calls (file reads, edits, etc.) are shown as collapsible sections beneath the output, each with a status badge (✓ success, ✗ error) once the result returns. When the run finishes, a one-line breakdown shows the cost, elapsed time, and tokens used (e.g. `$0.0123 - 4.5s - 12,345 tokens`).
+After selecting a prompt, Claude's output streams in real time into a sidebar pane. Tool calls (file reads, edits, etc.) are shown as collapsible sections beneath the output, each with a status badge (✓ success, ✗ error) once the result returns. While the run is active, an animated "Claude is working" indicator sits at the bottom of the pane with a live counter of elapsed time and tokens generated so far. When the run finishes, the indicator is replaced by a one-line breakdown showing the cost, elapsed time, and total tokens used (e.g. `$0.0123 - 4.5s - 12,345 tokens`).
 
 If Claude requests a tool that isn't on the `Allowed tools` whitelist, an approval card appears in the output pane with **Allow once**, **Allow for this run**, or **Deny**. An approval applies only to that single run and never changes your saved whitelist.
 
@@ -126,7 +126,7 @@ Open a multi-turn conversation with Claude inside Obsidian:
 1. **Ribbon icon** — Click the chat (message) icon in the left sidebar, or
 2. **Command palette** — Use `Open Claude chat`
 
-Type a message and press **Enter** to send (**Shift+Enter** for a newline). Claude's replies render as markdown, and tool calls appear inline as collapsible sections, the same as the output pane. After each turn, a one-line breakdown below the reply shows the cost, elapsed time, and tokens used (e.g. `$0.0123 - 4.5s - 12,345 tokens`). The conversation keeps its context across turns -- one Claude process stays alive for the life of the chat.
+Type a message and press **Enter** to send (**Shift+Enter** for a newline). Claude's replies render as markdown, and tool calls appear inline as collapsible sections, the same as the output pane. While Claude is working on a turn, an animated "Claude is working" indicator with a live elapsed-time and token counter sits at the bottom of the transcript; it disappears when the turn ends. After each turn, a one-line breakdown below the reply shows the cost, elapsed time, and tokens used (e.g. `$0.0123 - 4.5s - 12,345 tokens`). The conversation keeps its context across turns -- one Claude process stays alive for the life of the chat.
 
 **Tool approvals.** The chat starts with the same `Allowed tools` whitelist as one-off prompts. When Claude wants a tool that isn't on the whitelist, an approval card appears in the conversation with three choices:
 
@@ -224,6 +224,8 @@ Configure the plugin in Obsidian Settings > Claude Vault Assistant:
 - **`src/electron-compat.ts`** — Electron renderer shim so the Agent SDK runs inside Obsidian
 - **`src/activity-lock.ts`** — Shared gate so a one-off run and a chat turn never run at the same time
 - **`src/tool-render.ts`** — Shared tool-call rendering used by both the output and chat views
+- **`src/working-indicator.ts`** — Animated "Claude is working" indicator with a live elapsed-time/token counter, shown in both the output and chat views while a turn is in flight
+- **`src/format.ts`** — Shared formatting for the cost/time/token breakdown and live token counts
 
 ## Development
 

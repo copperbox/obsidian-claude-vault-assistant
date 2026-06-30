@@ -61,3 +61,20 @@ describe("styles.css code block frame", () => {
 		expect(body).toContain("right:");
 	});
 });
+
+describe("styles.css working indicator", () => {
+	it("pulses the working label", () => {
+		const body = ruleBody(".claude-working-label");
+		expect(body).toContain("animation: claude-working-pulse");
+		expect(css).toContain("@keyframes claude-working-pulse");
+	});
+
+	it("right-aligns the live elapsed/token meta", () => {
+		const body = ruleBody(".claude-working-meta");
+		expect(body).toContain("margin-left: auto");
+	});
+
+	it("holds the label steady under prefers-reduced-motion", () => {
+		expect(css).toContain("prefers-reduced-motion: reduce");
+	});
+});

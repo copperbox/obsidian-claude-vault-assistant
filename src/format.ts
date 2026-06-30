@@ -30,6 +30,18 @@ export function sumUsageTokens(usage: unknown): number | undefined {
 	return found ? total : undefined;
 }
 
+/**
+ * Output tokens reported by a single assistant message's `usage` object. Used to
+ * accumulate a live "tokens generated so far" count during a turn (output tokens
+ * are additive across the agent's steps, unlike input/cache which would double
+ * count). Returns 0 when no usage data is present.
+ */
+export function outputTokensFromUsage(usage: unknown): number {
+	if (!usage || typeof usage !== "object") return 0;
+	const value = (usage as Record<string, unknown>)["output_tokens"];
+	return typeof value === "number" ? value : 0;
+}
+
 /** Format a token count with thousands separators, e.g. 12345 -> "12,345". */
 export function formatTokens(tokens: number): string {
 	return Math.round(tokens)

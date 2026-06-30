@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { sumUsageTokens, formatTokens, formatResultMeta } from "../format";
+import {
+	sumUsageTokens,
+	outputTokensFromUsage,
+	formatTokens,
+	formatResultMeta,
+} from "../format";
 
 describe("sumUsageTokens", () => {
 	it("sums prompt, output, and both cache buckets", () => {
@@ -26,6 +31,25 @@ describe("sumUsageTokens", () => {
 	it("returns undefined when the usage object has no numeric fields", () => {
 		expect(sumUsageTokens({})).toBeUndefined();
 		expect(sumUsageTokens({ input_tokens: "10" })).toBeUndefined();
+	});
+});
+
+describe("outputTokensFromUsage", () => {
+	it("returns the output_tokens field", () => {
+		expect(outputTokensFromUsage({ input_tokens: 10, output_tokens: 20 })).toBe(
+			20
+		);
+	});
+
+	it("returns 0 when output_tokens is missing or non-numeric", () => {
+		expect(outputTokensFromUsage({ input_tokens: 10 })).toBe(0);
+		expect(outputTokensFromUsage({ output_tokens: "20" })).toBe(0);
+	});
+
+	it("returns 0 when there is no usage object", () => {
+		expect(outputTokensFromUsage(undefined)).toBe(0);
+		expect(outputTokensFromUsage(null)).toBe(0);
+		expect(outputTokensFromUsage("nope")).toBe(0);
 	});
 });
 

@@ -89,6 +89,15 @@ describe("ClaudeOutputView", () => {
 			resetPersistedStatus();
 			expect(getPersistedStatus().status).toBe("idle");
 		});
+
+		it("shows a working indicator while running and accepts token updates", () => {
+			view.setStatus("running");
+			// Live token feed should not throw while the indicator is shown.
+			view.setWorkingTokens(1234);
+			view.setStatus("complete");
+			// And it is a no-op once the indicator is gone.
+			view.setWorkingTokens(5678);
+		});
 	});
 
 	describe("markdown rendering", () => {

@@ -97,6 +97,8 @@ function createMockEl(): Record<string, unknown> {
 		show: () => {},
 		hide: () => {},
 		addEventListener: (_event: string, _handler: () => void) => {},
+		appendChild: (child: unknown) => child,
+		remove: () => {},
 		focus: () => {},
 		closest: (_selector: string) => null,
 		querySelector: (_selector: string) => null,
@@ -108,6 +110,7 @@ function createMockEl(): Record<string, unknown> {
 		scrollHeight: 0,
 		textContent: "",
 		className: "",
+		lastChild: null,
 	};
 	return el;
 }
@@ -118,12 +121,16 @@ if (!globalScope.activeWindow) {
 	globalScope.activeWindow = {
 		setTimeout: (cb: () => void, ms?: number) => setTimeout(cb, ms) as unknown as number,
 		clearTimeout: (id: number) => clearTimeout(id as unknown as ReturnType<typeof setTimeout>),
+		setInterval: (cb: () => void, ms?: number) => setInterval(cb, ms) as unknown as number,
+		clearInterval: (id: number) => clearInterval(id as unknown as ReturnType<typeof setInterval>),
 	};
 }
 if (!globalScope.window) {
 	globalScope.window = {
 		setTimeout: (cb: () => void, ms?: number) => setTimeout(cb, ms) as unknown as number,
 		clearTimeout: (id: number) => clearTimeout(id as unknown as ReturnType<typeof setTimeout>),
+		setInterval: (cb: () => void, ms?: number) => setInterval(cb, ms) as unknown as number,
+		clearInterval: (id: number) => clearInterval(id as unknown as ReturnType<typeof setInterval>),
 	};
 }
 if (!globalScope.activeDocument) {

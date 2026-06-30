@@ -333,6 +333,9 @@ export default class ClaudeVaultAssistant extends Plugin {
 					lastTokens = result.tokens;
 					view.showResult(result.costUsd, result.durationMs, result.tokens);
 				},
+				onUsage: (tokens) => {
+					view.setWorkingTokens(tokens);
+				},
 				onError: (message) => {
 					view.showError(message);
 				},
