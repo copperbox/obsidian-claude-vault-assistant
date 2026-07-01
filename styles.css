@@ -793,6 +793,64 @@
 	border-color: var(--text-error);
 }
 
+/* Active-note context caption under a sent user message */
+.claude-chat-context-caption {
+	align-self: flex-end;
+	color: var(--text-muted);
+	font-size: var(--font-smallest);
+	font-style: italic;
+}
+
+/* The caption is rendered from Markdown so its wiki link is clickable; strip
+   the paragraph margins the renderer adds so it stays a compact one-liner. */
+.claude-chat-context-caption p {
+	margin: 0;
+}
+
+/* Context bar: shows which note is attached to the next turn */
+.claude-chat-context-bar {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 8px;
+	padding: 4px 12px;
+	border-top: 1px solid var(--background-modifier-border);
+	flex-shrink: 0;
+	font-size: var(--font-smallest);
+}
+
+.claude-chat-context-bar-label {
+	color: var(--text-muted);
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+}
+
+.claude-chat-context-empty {
+	color: var(--text-faint);
+	font-style: italic;
+}
+
+.claude-chat-context-item {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	cursor: pointer;
+}
+
+.claude-chat-context-checkbox {
+	cursor: pointer;
+	margin: 0;
+}
+
+.claude-chat-context-name {
+	color: var(--text-normal);
+	max-width: 240px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
 /* Input row */
 .claude-chat-input-row {
 	display: flex;

@@ -3,11 +3,12 @@ import {
 	ClaudeChatView,
 	vaultLinkFromAnchor,
 	buildModelOptions,
+	noteDisplayName,
 	type ChatViewDeps,
 } from "../chat-view";
 import { ActivityLock } from "../activity-lock";
 import { DEFAULT_SETTINGS } from "../settings";
-import { WorkspaceLeaf } from "obsidian";
+import { WorkspaceLeaf, MarkdownRenderer } from "obsidian";
 
 function makeFakeSession() {
 	return {
@@ -112,6 +113,16 @@ describe("buildModelOptions", () => {
 	});
 });
 
+describe("noteDisplayName", () => {
+	it("strips folders and the .md extension", () => {
+		expect(noteDisplayName("Daily/2026-06-30.md")).toBe("2026-06-30");
+	});
+
+	it("returns a bare name unchanged", () => {
+		expect(noteDisplayName("note")).toBe("note");
+	});
+});
+
 describe("ClaudeChatView", () => {
 	beforeEach(() => vi.clearAllMocks());
 
@@ -138,6 +149,50 @@ describe("ClaudeChatView", () => {
 		expect(fakeSession.send).toHaveBeenCalledWith("hello");
 		// Lock stays held until the turn ends.
 		expect(lock.isBusy).toBe(true);
+	});
+
+	it("prepends the active note as context when it is included", async () => {
+		const { view, fakeSession } = makeView({
+			getActiveNotePath: () => "Daily/2026-06-30.md",
+		});
+		(view as unknown as { inputEl: { value: string } }).inputEl.value = "hello";
+
+		await (view as unknown as { handleSend: () => Promise<void> }).handleSend();
+
+		expect(fakeSession.send).toHaveBeenCalledOnce();
+		const sent = (fakeSession.send as ReturnType<typeof vi.fn>).mock
+			.calls[0]![0] as string;
+		expect(sent).toContain("[[Daily/2026-06-30]]");
+		expect(sent.endsWith("hello")).toBe(true);
+	});
+
+	it("renders the context caption through Markdown so its wiki link is clickable", async () => {
+		const renderSpy = vi.spyOn(MarkdownRenderer, "render");
+		const { view } = makeView({
+			getActiveNotePath: () => "Daily/2026-06-30.md",
+		});
+		(view as unknown as { inputEl: { value: string } }).inputEl.value = "hello";
+
+		await (view as unknown as { handleSend: () => Promise<void> }).handleSend();
+
+		const captionRender = renderSpy.mock.calls.find((c) =>
+			String(c[1]).startsWith("Context:")
+		);
+		expect(captionRender).toBeDefined();
+		expect(String(captionRender![1])).toContain("[[Daily/2026-06-30]]");
+	});
+
+	it("sends only the user text when the active note is unchecked", async () => {
+		const { view, fakeSession } = makeView({
+			getActiveNotePath: () => "Daily/2026-06-30.md",
+		});
+		(view as unknown as { includeActiveNote: boolean }).includeActiveNote =
+			false;
+		(view as unknown as { inputEl: { value: string } }).inputEl.value = "hello";
+
+		await (view as unknown as { handleSend: () => Promise<void> }).handleSend();
+
+		expect(fakeSession.send).toHaveBeenCalledWith("hello");
 	});
 
 	it("starts the session with the selected model", async () => {
