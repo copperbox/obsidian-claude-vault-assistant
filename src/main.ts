@@ -460,6 +460,12 @@ export default class ClaudeVaultAssistant extends Plugin {
 			getSettings: () => this.settings,
 			getVaultPath: () => this.getVaultPath(),
 			lock: this.lock,
+			getActiveNotePath: () =>
+				this.app.workspace.getActiveFile()?.path ?? null,
+			onActiveNoteChange: (cb) => {
+				const ref = this.app.workspace.on("active-leaf-change", () => cb());
+				return () => this.app.workspace.offref(ref);
+			},
 		};
 	}
 

@@ -138,6 +138,8 @@ These approvals never modify your saved `Allowed tools` whitelist. One-off promp
 
 **Choosing the model.** The chat header has a model dropdown showing the model that will be used for the next message. It defaults to your `Model override` setting (or "Default (CLI)" when that's empty, letting the CLI choose). Pick a different model (Opus, Sonnet, Haiku, or a custom value from your settings) to switch -- it applies live to the running conversation and is remembered for this chat only; it never changes your saved settings. The dropdown is locked while a turn is in progress.
 
+**Active-note context.** A context bar sits just above the message box showing the note you currently have open in Obsidian, with a checkbox that is on by default. While it's checked, each message you send is prefixed with a short line naming that note as a `[[wiki link]]` and telling Claude to read it if it's relevant -- so a chat instantly knows what you're looking at without you pasting anything. The reference is cheap (it costs no extra tokens up front; Claude reads the note itself only when it needs to), and it always reflects the note's current on-disk contents. The bar updates as you switch notes, and a small `Context: [[note]]` caption is recorded under each message that included one -- its wiki link is clickable, so you can reopen the referenced note when reviewing the history. Uncheck the box to send a message with no note attached. When no note is open, the bar shows "No note open" and nothing is attached.
+
 **Stopping and resetting.** Use **Stop** in the chat header to interrupt the current turn without ending the conversation. Use **New chat** to discard the conversation and start fresh.
 
 **One run at a time.** A chat turn and a one-off prompt run cannot run simultaneously. An idle, open chat does not block one-off prompts -- the lock is only held while a turn is actively running. The `Max turns` and `Max budget (USD)` settings apply per chat turn.
@@ -215,7 +217,8 @@ Configure the plugin in Obsidian Settings > Claude Vault Assistant:
 - **`src/prompt-picker.ts`** — Modal for selecting a prompt to run
 - **`src/adhoc-prompt-modal.ts`** — Modal for typing ad-hoc prompts
 - **`src/vault-refresher.ts`** — Refreshes modified files after a run
-- **`src/chat-view.ts`** — Sidebar chat pane: transcript, input box, and permission cards
+- **`src/chat-view.ts`** — Sidebar chat pane: transcript, input box, active-note context bar, and permission cards
+- **`src/chat-context.ts`** — Pure helpers that turn the active note into a reference-only context preamble ([[wiki links]]) prepended to a chat turn
 - **`src/permission-card.ts`** — Shared tool-approval card rendering used by both the output and chat views
 - **`src/permission-types.ts`** — Shared permission contract (decision and request types)
 - **`src/run-types.ts`** — Shared `RunScope` type (vault vs active note)

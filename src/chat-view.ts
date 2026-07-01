@@ -15,6 +15,11 @@ import {
 import { formatResultMeta } from "./format";
 import { labelCodeBlocks } from "./code-block";
 import { WorkingIndicator } from "./working-indicator";
+import {
+	buildContextPreamble,
+	composeMessage,
+	pathToWikiLink,
+} from "./chat-context";
 
 export const VIEW_TYPE_CLAUDE_CHAT = "claude-vault-chat";
 
@@ -47,6 +52,12 @@ export function vaultLinkFromAnchor(anchor: {
 
 	if (anchor.internal && href) return href;
 	return null;
+}
+
+/** The note's file name without folders or the ".md" extension, for display. */
+export function noteDisplayName(path: string): string {
+	const base = path.split("/").pop() ?? path;
+	return base.replace(/\.md$/i, "");
 }
 
 export interface ModelOption {
@@ -82,6 +93,17 @@ export interface ChatViewDeps {
 	lock: ActivityLock;
 	/** Injectable for tests; defaults to constructing a real ChatSession. */
 	createSession?: (config: ChatSessionConfig) => ChatSession;
+	/**
+	 * Vault-relative path of the note currently open in Obsidian, or null.
+	 * Optional: when absent, the context bar stays empty and no context is
+	 * attached (keeps older callers and tests working).
+	 */
+	getActiveNotePath?: () => string | null;
+	/**
+	 * Subscribe to active-note changes; the callback fires whenever the user
+	 * switches the focused note. Returns an unsubscribe function. Optional.
+	 */
+	onActiveNoteChange?: (cb: () => void) => () => void;
 }
 
 const LOCK_LABEL = "Interactive chat turn";
@@ -104,6 +126,11 @@ export class ClaudeChatView extends ItemView {
 	private toolCallEls: Map<string, ToolCallEls> = new Map();
 	private pendingCards: Set<PermissionCardHandle> = new Set();
 	private workingIndicator: WorkingIndicator | null = null;
+
+	private contextBarEl: HTMLElement | null = null;
+	/** Whether the active note is attached to the next turn as context. */
+	private includeActiveNote = true;
+	private unsubscribeActiveNote: (() => void) | null = null;
 
 	constructor(leaf: WorkspaceLeaf) {
 		super(leaf);
@@ -153,6 +180,8 @@ export class ClaudeChatView extends ItemView {
 			this.handleLinkClick(evt)
 		);
 
+		this.contextBarEl = container.createDiv({ cls: "claude-chat-context-bar" });
+
 		const inputRow = container.createDiv({ cls: "claude-chat-input-row" });
 		this.inputEl = inputRow.createEl("textarea", {
 			cls: "claude-chat-input",
@@ -170,6 +199,10 @@ export class ClaudeChatView extends ItemView {
 		});
 		this.sendBtn.addEventListener("click", () => void this.handleSend());
 
+		this.unsubscribeActiveNote =
+			this.deps?.onActiveNoteChange?.(() => this.refreshContextBar()) ?? null;
+		this.refreshContextBar();
+
 		return Promise.resolve();
 	}
 
@@ -181,12 +214,15 @@ export class ClaudeChatView extends ItemView {
 	async onClose(): Promise<void> {
 		await this.teardownSession();
 		this.stopWorkingIndicator();
+		this.unsubscribeActiveNote?.();
+		this.unsubscribeActiveNote = null;
 		this.transcriptEl = null;
 		this.inputEl = null;
 		this.sendBtn = null;
 		this.stopBtn = null;
 		this.statusEl = null;
 		this.modelSelect = null;
+		this.contextBarEl = null;
 		this.currentAssistantEl = null;
 		this.currentAssistantText = "";
 		this.toolCallEls.clear();
@@ -262,11 +298,14 @@ export class ClaudeChatView extends ItemView {
 		}
 
 		this.inputEl.value = "";
-		this.addUserMessage(text);
+
+		const contextPaths = this.currentContextPaths();
+		const message = composeMessage(buildContextPreamble(contextPaths), text);
+		this.addUserMessage(text, contextPaths);
 
 		try {
 			await session.start();
-			session.send(text);
+			session.send(message);
 		} catch (err) {
 			this.deps.lock.release();
 			this.addError(err instanceof Error ? err.message : String(err));
@@ -323,6 +362,54 @@ export class ClaudeChatView extends ItemView {
 		this.setStatus("idle", "Idle");
 	}
 
+	// --- context bar -------------------------------------------------------
+
+	/** The note paths attached to the next turn (empty when unchecked or none). */
+	private currentContextPaths(): string[] {
+		if (!this.includeActiveNote) return [];
+		const path = this.deps?.getActiveNotePath?.() ?? null;
+		return path ? [path] : [];
+	}
+
+	/**
+	 * Redraw the context bar from the current active note: a checkbox whose
+	 * checked state tracks includeActiveNote, or a muted placeholder when no note
+	 * is open. Called on open and on every active-note change.
+	 */
+	private refreshContextBar(): void {
+		const bar = this.contextBarEl;
+		if (!bar) return;
+		bar.empty();
+		bar.createSpan({
+			cls: "claude-chat-context-bar-label",
+			text: "Context",
+		});
+
+		const path = this.deps?.getActiveNotePath?.() ?? null;
+		if (!path) {
+			bar.createSpan({
+				cls: "claude-chat-context-empty",
+				text: "No note open",
+			});
+			return;
+		}
+
+		const item = bar.createEl("label", { cls: "claude-chat-context-item" });
+		const checkbox = item.createEl("input", {
+			cls: "claude-chat-context-checkbox",
+			attr: { type: "checkbox" },
+		});
+		checkbox.checked = this.includeActiveNote;
+		checkbox.addEventListener("change", () => {
+			this.includeActiveNote = checkbox.checked;
+		});
+		item.createSpan({
+			cls: "claude-chat-context-name",
+			text: noteDisplayName(path),
+			attr: { title: path },
+		});
+	}
+
 	// --- session callbacks -------------------------------------------------
 
 	private onSystemInit(info: { model?: string; tools?: string[] }): void {
@@ -365,13 +452,30 @@ export class ClaudeChatView extends ItemView {
 
 	// --- transcript rendering ---------------------------------------------
 
-	private addUserMessage(text: string): void {
+	private addUserMessage(text: string, contextPaths: string[] = []): void {
 		if (!this.transcriptEl) return;
 		this.finalizeAssistant();
 		const msg = this.transcriptEl.createDiv({
 			cls: "claude-chat-msg claude-chat-msg-user",
 		});
 		msg.createEl("pre", { text, cls: "claude-chat-user-text" });
+		if (contextPaths.length > 0) {
+			const links = contextPaths
+				.map((p) => `[[${pathToWikiLink(p)}]]`)
+				.join(", ");
+			const caption = this.transcriptEl.createDiv({
+				cls: "claude-chat-context-caption",
+			});
+			// Render through Markdown so the wiki links become clickable
+			// internal-link anchors, resolved by the transcript's click handler.
+			void MarkdownRenderer.render(
+				this.app,
+				`Context: ${links}`,
+				caption,
+				"/",
+				this
+			).then(() => this.scrollToBottom());
+		}
 		this.scrollToBottom();
 	}
 
