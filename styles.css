@@ -472,6 +472,37 @@
 	border-color: var(--text-error);
 }
 
+.claude-history-back-btn,
+.claude-history-resume-btn {
+	font-size: var(--font-smallest);
+	padding: 2px 10px;
+	border-radius: 4px;
+	cursor: pointer;
+	border: 1px solid var(--background-modifier-border);
+	background-color: transparent;
+	color: var(--text-muted);
+	margin-right: 8px;
+}
+
+.claude-history-resume-btn:hover {
+	background-color: var(--interactive-accent);
+	color: var(--text-on-accent);
+	border-color: var(--interactive-accent);
+}
+
+/* The history view reuses the pane/toolbar styles; the container just stacks
+   the list and detail panes vertically. */
+.claude-history-container {
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+	overflow: hidden;
+}
+
+.claude-history-detail {
+	overflow-y: auto;
+}
+
 .claude-history-list {
 	display: flex;
 	flex-direction: column;
@@ -550,26 +581,6 @@
 	font-style: italic;
 }
 
-.adhoc-prompt-modal {
-	padding-bottom: 0;
-}
-
-.adhoc-prompt-textarea {
-	width: 100%;
-	min-height: 150px;
-	resize: vertical;
-	margin-bottom: 4px;
-	font-family: var(--font-interface);
-	font-size: var(--font-ui-small);
-}
-
-.adhoc-prompt-hint {
-	display: block;
-	color: var(--text-muted);
-	font-size: var(--font-smallest);
-	margin-bottom: 8px;
-}
-
 .prompt-picker-overrides {
 	color: var(--text-accent);
 	font-size: var(--font-smallest);
@@ -591,6 +602,8 @@
 .claude-chat-header {
 	display: flex;
 	align-items: center;
+	/* Three dropdowns plus buttons overflow a narrow sidebar; let them wrap. */
+	flex-wrap: wrap;
 	gap: 8px;
 	padding: 4px 12px;
 	border-bottom: 1px solid var(--background-modifier-border);
@@ -898,4 +911,15 @@
 .claude-chat-send-btn:disabled {
 	opacity: 0.6;
 	cursor: default;
+}
+
+/* Divider shown when a past conversation is reloaded from history. */
+.claude-chat-resume-marker {
+	font-size: var(--font-smallest);
+	color: var(--text-muted);
+	font-style: italic;
+	text-align: center;
+	padding: 6px 0;
+	border-bottom: 1px dashed var(--background-modifier-border);
+	margin-bottom: 8px;
 }

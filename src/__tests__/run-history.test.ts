@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
 	addEntry,
+	upsertEntry,
 	pruneHistory,
 	clearHistory,
 	generateEntryId,
@@ -68,6 +69,39 @@ describe("run-history", () => {
 			const fresh = makeEntry({ promptName: "New" });
 			const result = addEntry(existing, fresh, 1);
 			expect(result).toHaveLength(1);
+			expect(result[0]!.promptName).toBe("New");
+		});
+	});
+
+	describe("upsertEntry", () => {
+		it("prepends a new entry when the id is unknown", () => {
+			const existing = [makeEntry({ promptName: "Old" })];
+			const fresh = makeEntry({ promptName: "New" });
+			const result = upsertEntry(existing, fresh, 50);
+			expect(result).toHaveLength(2);
+			expect(result[0]!.promptName).toBe("New");
+		});
+
+		it("replaces an existing entry in place, keeping its position", () => {
+			const target = makeEntry({ promptName: "Chat", output: "turn 1" });
+			const newer = makeEntry({ promptName: "Newer" });
+			const history = [newer, target];
+
+			const updated = { ...target, output: "turn 1\nturn 2", costUsd: 0.02 };
+			const result = upsertEntry(history, updated, 50);
+
+			expect(result).toHaveLength(2);
+			expect(result[1]!.output).toBe("turn 1\nturn 2");
+			expect(result[1]!.costUsd).toBe(0.02);
+			expect(result[0]!.promptName).toBe("Newer");
+		});
+
+		it("prunes when inserting past the max", () => {
+			const existing = Array.from({ length: 3 }, (_, i) =>
+				makeEntry({ promptName: `Entry ${i}` })
+			);
+			const result = upsertEntry(existing, makeEntry({ promptName: "New" }), 3);
+			expect(result).toHaveLength(3);
 			expect(result[0]!.promptName).toBe("New");
 		});
 	});

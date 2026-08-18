@@ -1,6 +1,7 @@
 import type {
 	Options,
 	CanUseTool,
+	PermissionMode,
 	PermissionResult,
 	Query,
 	SDKMessage,
@@ -46,7 +47,11 @@ export interface ChatResult {
 }
 
 export interface ChatCallbacks {
-	onSystemInit?: (info: { model?: string; tools?: string[] }) => void;
+	onSystemInit?: (info: {
+		model?: string;
+		tools?: string[];
+		sessionId?: string;
+	}) => void;
 	onAssistantText: (text: string) => void;
 	onToolUse: (tool: ChatToolUse) => void;
 	onToolResult: (result: ChatToolResult) => void;
@@ -79,13 +84,16 @@ export interface ChatSessionConfig {
 	extraSystemPrompt?: string;
 	/** Pass --no-session-persistence so the run leaves no stored session. */
 	disableSessionPersistence?: boolean;
+	/** Resume a persisted CLI session instead of starting fresh. */
+	resumeSessionId?: string;
 }
 
 /**
- * Build the Agent SDK options for an interactive chat. Mirrors the one-off
- * runner's posture: the allowedTools whitelist auto-approves, permissionMode
- * "default" makes anything else prompt (handled by canUseTool), and the
- * Obsidian wiki-link instructions are appended to the default system prompt.
+ * Build the Agent SDK options for an interactive chat: the allowedTools
+ * whitelist auto-approves, the configured permissionMode governs everything
+ * else (in "default" mode anything not whitelisted prompts via canUseTool),
+ * and the Obsidian wiki-link instructions are appended to the default system
+ * prompt.
  */
 export function buildChatOptions(params: {
 	vaultPath: string;
@@ -96,6 +104,8 @@ export function buildChatOptions(params: {
 	extraSystemPrompt?: string;
 	/** Pass --no-session-persistence so the run leaves no stored session. */
 	disableSessionPersistence?: boolean;
+	/** Resume a persisted CLI session instead of starting fresh. */
+	resumeSessionId?: string;
 }): Options {
 	const {
 		vaultPath,
@@ -104,6 +114,7 @@ export function buildChatOptions(params: {
 		canUseTool,
 		extraSystemPrompt,
 		disableSessionPersistence,
+		resumeSessionId,
 	} = params;
 
 	const append = extraSystemPrompt
@@ -113,7 +124,7 @@ export function buildChatOptions(params: {
 	const options: Options = {
 		cwd: vaultPath,
 		pathToClaudeCodeExecutable: settings.cliPath,
-		permissionMode: "default",
+		permissionMode: settings.permissionMode,
 		allowedTools: settings.allowedTools,
 		systemPrompt: {
 			type: "preset",
@@ -130,6 +141,12 @@ export function buildChatOptions(params: {
 	}
 	if (settings.modelOverride) {
 		options.model = settings.modelOverride;
+	}
+	if (settings.effort) {
+		options.effort = settings.effort;
+	}
+	if (resumeSessionId) {
+		options.resume = resumeSessionId;
 	}
 
 	const extraArgs: Record<string, string | null> = {};
@@ -247,6 +264,7 @@ export class ChatSession {
 			canUseTool: this.canUseTool,
 			extraSystemPrompt: this.config.extraSystemPrompt,
 			disableSessionPersistence: this.config.disableSessionPersistence,
+			resumeSessionId: this.config.resumeSessionId,
 		});
 
 		this.query = await this.queryFn({ prompt: this.inputQueue, options });
@@ -272,6 +290,19 @@ export class ChatSession {
 		if (!this.query) return;
 		try {
 			await this.query.setModel(model);
+		} catch (err) {
+			this.config.callbacks.onError(errToString(err));
+		}
+	}
+
+	/**
+	 * Switch the permission mode for the live conversation. No-op if the session
+	 * hasn't started yet (the chosen mode is applied via options when it does).
+	 */
+	async setPermissionMode(mode: PermissionMode): Promise<void> {
+		if (!this.query) return;
+		try {
+			await this.query.setPermissionMode(mode);
 		} catch (err) {
 			this.config.callbacks.onError(errToString(err));
 		}
@@ -357,6 +388,7 @@ export class ChatSession {
 					this.config.callbacks.onSystemInit?.({
 						model: asString(data["model"]),
 						tools: asStringArray(data["tools"]),
+						sessionId: asString(data["session_id"]),
 					});
 				}
 				break;

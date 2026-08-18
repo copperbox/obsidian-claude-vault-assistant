@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import ClaudeVaultAssistant from "../main";
-import { VIEW_TYPE_CLAUDE_OUTPUT } from "../output-view";
+import { VIEW_TYPE_CLAUDE_HISTORY } from "../history-view";
 import { VIEW_TYPE_CLAUDE_CHAT } from "../chat-view";
 
 interface MockCommand {
@@ -46,8 +46,8 @@ describe("ClaudeVaultAssistant command registration", () => {
 		await plugin.onload();
 	});
 
-	it("registers the output and chat view types", () => {
-		expect(registeredViewTypes).toContain(VIEW_TYPE_CLAUDE_OUTPUT);
+	it("registers the history and chat view types", () => {
+		expect(registeredViewTypes).toContain(VIEW_TYPE_CLAUDE_HISTORY);
 		expect(registeredViewTypes).toContain(VIEW_TYPE_CLAUDE_CHAT);
 	});
 
@@ -62,21 +62,14 @@ describe("ClaudeVaultAssistant command registration", () => {
 		expect(typeof chat!.callback).toBe("function");
 	});
 
-	it("registers 6 commands", () => {
-		expect(registeredCommands).toHaveLength(6);
+	it("registers 4 commands", () => {
+		expect(registeredCommands).toHaveLength(4);
 	});
 
 	it("registers Open Claude chat command", () => {
 		const cmd = registeredCommands.find((c) => c.id === "open-chat");
 		expect(cmd).toBeDefined();
 		expect(cmd!.name).toBe("Open Claude chat");
-		expect(cmd!.callback).toBeDefined();
-	});
-
-	it("registers Run ad-hoc Claude prompt command", () => {
-		const cmd = registeredCommands.find((c) => c.id === "run-adhoc-prompt");
-		expect(cmd).toBeDefined();
-		expect(cmd!.name).toBe("Run ad-hoc Claude prompt");
 		expect(cmd!.callback).toBeDefined();
 	});
 
@@ -94,18 +87,16 @@ describe("ClaudeVaultAssistant command registration", () => {
 		expect(cmd!.checkCallback).toBeDefined();
 	});
 
-	it("registers Stop Claude command with check", () => {
-		const cmd = registeredCommands.find((c) => c.id === "stop-claude");
-		expect(cmd).toBeDefined();
-		expect(cmd!.name).toBe("Stop Claude");
-		expect(cmd!.checkCallback).toBeDefined();
-	});
-
-	it("registers Open Claude Output command", () => {
+	it("keeps the open-output command id for the history view", () => {
 		const cmd = registeredCommands.find((c) => c.id === "open-output");
 		expect(cmd).toBeDefined();
-		expect(cmd!.name).toBe("Open Claude output");
+		expect(cmd!.name).toBe("Open Claude history");
 		expect(cmd!.callback).toBeDefined();
+	});
+
+	it("no longer registers the ad-hoc prompt or stop commands", () => {
+		expect(registeredCommands.find((c) => c.id === "run-adhoc-prompt")).toBeUndefined();
+		expect(registeredCommands.find((c) => c.id === "stop-claude")).toBeUndefined();
 	});
 
 	it("note command returns false when no active file", () => {
@@ -120,10 +111,5 @@ describe("ClaudeVaultAssistant command registration", () => {
 		} as never;
 		const cmd = registeredCommands.find((c) => c.id === "run-note-prompt");
 		expect(cmd!.checkCallback!(true)).toBe(true);
-	});
-
-	it("stop command returns false when not running", () => {
-		const cmd = registeredCommands.find((c) => c.id === "stop-claude");
-		expect(cmd!.checkCallback!(true)).toBe(false);
 	});
 });

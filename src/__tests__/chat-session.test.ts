@@ -29,8 +29,11 @@ function makeFakeQuery() {
 		}
 	};
 
+	const setPermissionModeSpy = vi.fn(async () => {});
+
 	const query = {
 		interrupt: interruptSpy,
+		setPermissionMode: setPermissionModeSpy,
 		[Symbol.asyncIterator]() {
 			return {
 				next: (): Promise<IteratorResult<unknown>> => {
@@ -43,7 +46,7 @@ function makeFakeQuery() {
 		},
 	};
 
-	return { query, emit, close, interruptSpy };
+	return { query, emit, close, interruptSpy, setPermissionModeSpy };
 }
 
 function makeCallbacks(): ChatCallbacks & {
@@ -123,6 +126,45 @@ describe("buildChatOptions", () => {
 		expect(opts.maxTurns).toBeUndefined();
 		expect(opts.model).toBeUndefined();
 		expect(opts.extraArgs).toBeUndefined();
+	});
+
+	it("uses the configured permission mode", () => {
+		const opts = buildChatOptions({
+			vaultPath: "/vault",
+			settings: { ...DEFAULT_SETTINGS, permissionMode: "acceptEdits" },
+			env,
+			canUseTool: async () => ({ behavior: "allow" }),
+		});
+		expect(opts.permissionMode).toBe("acceptEdits");
+	});
+
+	it("includes effort when configured and omits it by default", () => {
+		const withEffort = buildChatOptions({
+			vaultPath: "/vault",
+			settings: { ...DEFAULT_SETTINGS, effort: "xhigh" },
+			env,
+			canUseTool: async () => ({ behavior: "allow" }),
+		});
+		expect(withEffort.effort).toBe("xhigh");
+
+		const without = buildChatOptions({
+			vaultPath: "/vault",
+			settings: { ...DEFAULT_SETTINGS },
+			env,
+			canUseTool: async () => ({ behavior: "allow" }),
+		});
+		expect(without.effort).toBeUndefined();
+	});
+
+	it("passes a resume session id through to options.resume", () => {
+		const opts = buildChatOptions({
+			vaultPath: "/vault",
+			settings: { ...DEFAULT_SETTINGS },
+			env,
+			canUseTool: async () => ({ behavior: "allow" }),
+			resumeSessionId: "abc-123",
+		});
+		expect(opts.resume).toBe("abc-123");
 	});
 
 	it("appends an extra system prompt after the wiki-link prompt", () => {
@@ -395,6 +437,38 @@ describe("ChatSession", () => {
 		const r = await canUseTool("Bash", { command: "rm" }, { toolUseID: "x" });
 		expect(r.behavior).toBe("deny");
 		expect(r.message).toBeTruthy();
+	});
+
+	it("forwards the init session id to onSystemInit", async () => {
+		const session = makeSession();
+		await session.start();
+
+		fake.emit({
+			type: "system",
+			subtype: "init",
+			model: "claude-fable-5",
+			session_id: "sess-42",
+		});
+		await flush();
+
+		expect(callbacks.onSystemInit).toHaveBeenCalledWith(
+			expect.objectContaining({ model: "claude-fable-5", sessionId: "sess-42" })
+		);
+	});
+
+	it("setPermissionMode forwards to the SDK query", async () => {
+		const session = makeSession();
+		await session.start();
+
+		await session.setPermissionMode("acceptEdits");
+		expect(fake.setPermissionModeSpy).toHaveBeenCalledWith("acceptEdits");
+	});
+
+	it("setPermissionMode is a no-op before start", async () => {
+		const session = makeSession();
+		await session.setPermissionMode("plan");
+		// No query yet: nothing to assert beyond "does not throw".
+		expect(callbacks.onError).not.toHaveBeenCalled();
 	});
 
 	it("interrupt calls the SDK interrupt and ends the turn", async () => {

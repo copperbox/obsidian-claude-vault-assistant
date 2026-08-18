@@ -12,6 +12,8 @@ export interface RunHistoryEntry {
 	notePath?: string;
 	output: string;
 	prompt?: string;
+	/** CLI session id; when present the conversation can be resumed in chat. */
+	sessionId?: string;
 }
 
 export function generateEntryId(): string {
@@ -25,6 +27,23 @@ export function addEntry(
 ): RunHistoryEntry[] {
 	const updated = [entry, ...history];
 	return pruneHistory(updated, maxEntries);
+}
+
+/**
+ * Insert or replace an entry by id. A live chat session updates its single
+ * history entry after every turn; a replaced entry keeps its list position so
+ * the list doesn't reshuffle mid-conversation.
+ */
+export function upsertEntry(
+	history: RunHistoryEntry[],
+	entry: RunHistoryEntry,
+	maxEntries: number
+): RunHistoryEntry[] {
+	const idx = history.findIndex((e) => e.id === entry.id);
+	if (idx === -1) return addEntry(history, entry, maxEntries);
+	const updated = [...history];
+	updated[idx] = entry;
+	return updated;
 }
 
 export function pruneHistory(
