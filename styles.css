@@ -641,6 +641,14 @@
 	opacity: 0.6;
 }
 
+/* Column holding the context gauge with the Send button beneath it. */
+.claude-chat-send-col {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 6px;
+}
+
 /* Context-window gauge: a donut that fills clockwise with usage. The fill
    fraction comes from the --ctx-pct custom property (0-100), set from JS. */
 .claude-context-ring {

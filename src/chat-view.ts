@@ -246,8 +246,6 @@ export class ClaudeChatView extends ItemView {
 			cls: "claude-chat-status-badge claude-status-idle",
 			text: "Idle",
 		});
-		this.contextRingEl = header.createDiv({ cls: "claude-context-ring" });
-		this.updateContextRing(0);
 		const historyBtn = header.createEl("button", {
 			text: "History",
 			cls: "claude-chat-history-btn",
@@ -283,7 +281,11 @@ export class ClaudeChatView extends ItemView {
 				void this.handleSend();
 			}
 		});
-		this.sendBtn = inputRow.createEl("button", {
+		// Send sits in a small column with the context gauge directly above it.
+		const sendCol = inputRow.createDiv({ cls: "claude-chat-send-col" });
+		this.contextRingEl = sendCol.createDiv({ cls: "claude-context-ring" });
+		this.updateContextRing(0);
+		this.sendBtn = sendCol.createEl("button", {
 			text: "Send",
 			cls: "claude-chat-send-btn",
 		});
