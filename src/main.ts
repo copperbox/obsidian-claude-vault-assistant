@@ -263,10 +263,15 @@ export default class ClaudeVaultAssistant extends Plugin {
 		this.saveHistory().catch((err) => {
 			console.error("Failed to save run history:", err);
 		});
+		this.refreshHistoryViews();
+	}
+
+	/** Re-render any open history panes from the current history array. */
+	private refreshHistoryViews(): void {
 		for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_CLAUDE_HISTORY)) {
 			const view = leaf.view;
 			if (view instanceof ClaudeHistoryView) {
-				view.setHistory(this.history);
+				view.refresh();
 			}
 		}
 	}
@@ -339,10 +344,12 @@ export default class ClaudeVaultAssistant extends Plugin {
 	}
 
 	private wireHistoryCallbacks(view: ClaudeHistoryView): void {
-		view.setHistory(this.history);
+		// Pull-based: the view reads the live array on every render, so it shows
+		// current history no matter when Obsidian constructs it.
+		view.setHistorySource(() => this.history);
 		view.setOnClearHistory(() => {
 			this.history = [];
-			view.setHistory(this.history);
+			this.refreshHistoryViews();
 			this.saveHistory().catch((err) => {
 				console.error("Failed to save cleared history:", err);
 			});

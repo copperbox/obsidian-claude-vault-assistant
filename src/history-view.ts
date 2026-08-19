@@ -20,7 +20,12 @@ export class ClaudeHistoryView extends ItemView {
 	private listEl: HTMLElement | null = null;
 	private detailEl: HTMLElement | null = null;
 
-	private entries: RunHistoryEntry[] = [];
+	/**
+	 * Pull-based source of truth: read fresh on every render so the list is
+	 * correct no matter when Obsidian constructs the view relative to plugin
+	 * load (deferred sidebar views, restored layouts, plugin reloads).
+	 */
+	private getHistory: () => RunHistoryEntry[] = () => [];
 	private onClearHistory: (() => void) | null = null;
 	private onResume: ((entry: RunHistoryEntry) => void) | null = null;
 
@@ -63,8 +68,13 @@ export class ClaudeHistoryView extends ItemView {
 		return Promise.resolve();
 	}
 
-	setHistory(entries: RunHistoryEntry[]): void {
-		this.entries = entries;
+	setHistorySource(getHistory: () => RunHistoryEntry[]): void {
+		this.getHistory = getHistory;
+		this.renderList();
+	}
+
+	/** Re-render the list from the source (e.g. after a turn updates history). */
+	refresh(): void {
 		this.renderList();
 	}
 
@@ -88,7 +98,8 @@ export class ClaudeHistoryView extends ItemView {
 		if (!this.listEl) return;
 		this.listEl.empty();
 
-		if (this.entries.length === 0) {
+		const entries = this.getHistory();
+		if (entries.length === 0) {
 			this.listEl.createDiv({
 				text: "No session history yet.",
 				cls: "claude-history-empty",
@@ -110,7 +121,7 @@ export class ClaudeHistoryView extends ItemView {
 
 		const list = this.listEl.createDiv({ cls: "claude-history-list" });
 
-		for (const entry of this.entries) {
+		for (const entry of entries) {
 			const item = list.createDiv({ cls: "claude-history-item" });
 
 			const header = item.createDiv({ cls: "claude-history-item-header" });

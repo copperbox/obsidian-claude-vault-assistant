@@ -27,6 +27,20 @@ describe("ClaudeHistoryView", () => {
 		expect(view.getIcon()).toBe("history");
 	});
 
+	it("renders entries set before onOpen (restored-layout startup order)", async () => {
+		const view = new ClaudeHistoryView({} as never);
+		const source = vi.fn(() => [makeEntry()]);
+		// Wiring happens at construction time (registerView factory); the pane
+		// opens later. The list must still pull the entries on open.
+		view.setHistorySource(source);
+		source.mockClear();
+
+		await view.onOpen();
+
+		expect(source).toHaveBeenCalled();
+		await view.onClose();
+	});
+
 	describe("with an open view", () => {
 		let view: ClaudeHistoryView;
 
@@ -40,12 +54,12 @@ describe("ClaudeHistoryView", () => {
 		});
 
 		it("accepts history entries", () => {
-			view.setHistory([makeEntry(), makeEntry()]);
+			view.setHistorySource(() => [makeEntry(), makeEntry()]);
 			// Should not throw
 		});
 
 		it("handles empty history", () => {
-			view.setHistory([]);
+			view.setHistorySource(() => []);
 			// Should not throw
 		});
 
@@ -54,7 +68,7 @@ describe("ClaudeHistoryView", () => {
 			const resumeFn = vi.fn();
 			view.setOnClearHistory(clearFn);
 			view.setOnResume(resumeFn);
-			view.setHistory([makeEntry({ sessionId: "sess-1" })]);
+			view.setHistorySource(() => [makeEntry({ sessionId: "sess-1" })]);
 			expect(clearFn).not.toHaveBeenCalled();
 			expect(resumeFn).not.toHaveBeenCalled();
 		});
@@ -94,7 +108,7 @@ describe("ClaudeHistoryView", () => {
 		});
 
 		it("handles entries with all optional fields", () => {
-			view.setHistory([
+			view.setHistorySource(() => [
 				makeEntry({
 					promptName: "Summarize",
 					scope: "note",
