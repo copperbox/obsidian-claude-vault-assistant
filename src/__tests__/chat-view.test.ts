@@ -362,7 +362,8 @@ describe("ClaudeChatView", () => {
 	});
 
 	it("syncs the context ring to the CLI's exact usage after a turn", async () => {
-		const { view, deps, fakeSession } = makeView();
+		const saveHistoryEntry = vi.fn();
+		const { view, deps, fakeSession } = makeView({ saveHistoryEntry });
 		(view as unknown as { inputEl: { value: string } }).inputEl.value = "hi";
 		await (view as unknown as { handleSend: () => Promise<void> }).handleSend();
 
@@ -375,6 +376,11 @@ describe("ClaudeChatView", () => {
 		expect(
 			(view as unknown as { contextMaxTokens: number }).contextMaxTokens
 		).toBe(200_000);
+
+		// The exact usage is upserted into the same history entry once known.
+		const last = saveHistoryEntry.mock.calls.at(-1)![0] as Record<string, unknown>;
+		expect(last.contextTokens).toBe(60_000);
+		expect(last.contextWindow).toBe(200_000);
 	});
 
 	it("releases the lock and disposes the session on close", async () => {
@@ -548,6 +554,21 @@ describe("ClaudeChatView.resumeFromHistory", () => {
 		expect(entry.tokens).toBe(600);
 		expect(entry.sessionId).toBe("sess-old");
 		expect(String(entry.output)).toContain("Prior answer.");
+	});
+
+	it("restores the context gauge from the resumed entry", async () => {
+		const { view } = makeView();
+
+		await view.resumeFromHistory(
+			makeEntry({ contextTokens: 120_000, contextWindow: 200_000 })
+		);
+
+		const v = view as unknown as {
+			contextUsedTokens: number;
+			contextMaxTokens: number;
+		};
+		expect(v.contextUsedTokens).toBe(120_000);
+		expect(v.contextMaxTokens).toBe(200_000);
 	});
 
 	it("refuses to resume an entry without a session id", async () => {

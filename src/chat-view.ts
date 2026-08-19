@@ -189,6 +189,8 @@ export class ClaudeChatView extends ItemView {
 	private contextRingEl: HTMLElement | null = null;
 	/** Context window size from getContextUsage; 0 until first known. */
 	private contextMaxTokens = 0;
+	/** Latest context occupancy shown on the ring; persisted to history. */
+	private contextUsedTokens = 0;
 
 	// History bookkeeping: one entry per chat session, updated every turn.
 	private historyId: string | null = null;
@@ -496,6 +498,9 @@ export class ClaudeChatView extends ItemView {
 		this.historyDurationMs = entry.durationMs;
 		this.historyCostUsd = entry.costUsd;
 		this.historyTokens = entry.tokens;
+		// Restore the context gauge to where the conversation left off.
+		this.contextMaxTokens = entry.contextWindow ?? 0;
+		this.updateContextRing(entry.contextTokens ?? 0);
 
 		if (this.transcriptEl) {
 			this.transcriptEl.createDiv({
@@ -799,6 +804,7 @@ export class ClaudeChatView extends ItemView {
 	 * roughly honest.
 	 */
 	private updateContextRing(usedTokens: number): void {
+		this.contextUsedTokens = usedTokens;
 		const el = this.contextRingEl;
 		if (!el) return;
 		const max =
@@ -823,6 +829,9 @@ export class ClaudeChatView extends ItemView {
 		if (!usage) return;
 		this.contextMaxTokens = usage.maxTokens;
 		this.updateContextRing(usage.usedTokens);
+		// The turn's history entry was recorded before this exact count came
+		// back; upsert again so the persisted context usage matches.
+		this.recordHistory();
 	}
 
 	/** Upsert this conversation's history entry via the plugin. */
@@ -843,6 +852,8 @@ export class ClaudeChatView extends ItemView {
 		const sessionId =
 			this.session?.sessionId ?? this.sessionId ?? this.resumeSessionId;
 		if (sessionId) entry.sessionId = sessionId;
+		if (this.contextUsedTokens > 0) entry.contextTokens = this.contextUsedTokens;
+		if (this.contextMaxTokens > 0) entry.contextWindow = this.contextMaxTokens;
 		this.deps.saveHistoryEntry(entry);
 	}
 

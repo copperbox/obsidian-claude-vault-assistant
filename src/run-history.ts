@@ -14,6 +14,10 @@ export interface RunHistoryEntry {
 	prompt?: string;
 	/** CLI session id; when present the conversation can be resumed in chat. */
 	sessionId?: string;
+	/** Context-window occupancy (tokens) when the entry was last updated. */
+	contextTokens?: number;
+	/** The model's context-window size (tokens) at last update. */
+	contextWindow?: number;
 }
 
 export function generateEntryId(): string {

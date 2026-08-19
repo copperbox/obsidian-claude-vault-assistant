@@ -645,7 +645,8 @@
 .claude-chat-send-col {
 	display: flex;
 	flex-direction: column;
-	align-items: center;
+	/* Left-justified so the gauge hugs the chat box edge above Send. */
+	align-items: flex-start;
 	gap: 6px;
 }
 
