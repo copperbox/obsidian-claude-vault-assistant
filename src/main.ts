@@ -5,25 +5,18 @@ import {
 	parseSettings,
 	type PluginSettings,
 } from "./settings";
-import { PromptRunner } from "./prompt-runner";
-import type { RunScope } from "./run-types";
+import { buildPromptText, type RunScope } from "./run-types";
 import { scanPromptFiles, readPromptContent } from "./prompt-scanner";
 import { PromptPickerModal, ScopePickerModal } from "./prompt-picker";
-import { AdhocPromptModal } from "./adhoc-prompt-modal";
-import { ClaudeOutputView, VIEW_TYPE_CLAUDE_OUTPUT } from "./output-view";
+import { ClaudeHistoryView, VIEW_TYPE_CLAUDE_HISTORY } from "./history-view";
 import {
 	ClaudeChatView,
 	VIEW_TYPE_CLAUDE_CHAT,
 	type ChatViewDeps,
 } from "./chat-view";
 import { ActivityLock } from "./activity-lock";
-import { VaultRefresher } from "./vault-refresher";
 import { parsePromptFrontmatter, mergeOverrides, hasOverrides } from "./frontmatter";
-import {
-	type RunHistoryEntry,
-	addEntry,
-	generateEntryId,
-} from "./run-history";
+import { type RunHistoryEntry, upsertEntry } from "./run-history";
 
 interface PluginData {
 	settings: PluginSettings;
@@ -33,19 +26,21 @@ interface PluginData {
 export default class ClaudeVaultAssistant extends Plugin {
 	settings: PluginSettings = DEFAULT_SETTINGS;
 	history: RunHistoryEntry[] = [];
-	promptRunner: PromptRunner = new PromptRunner();
-	/** Shared gate so a one-off run and a chat turn never run at the same time. */
+	/** Shared gate so two chat turns never run at the same time. */
 	lock: ActivityLock = new ActivityLock();
-	private ribbonIconEl: HTMLElement | null = null;
 
 	async onload() {
 		await this.loadSettings();
 		this.addSettingTab(new ClaudeVaultSettingTab(this.app, this));
 
-		this.registerView(
-			VIEW_TYPE_CLAUDE_OUTPUT,
-			(leaf) => new ClaudeOutputView(leaf)
-		);
+		this.registerView(VIEW_TYPE_CLAUDE_HISTORY, (leaf) => {
+			const view = new ClaudeHistoryView(leaf);
+			// Wire here, not just in activateHistoryView: a pane restored from a
+			// saved workspace layout never goes through activate, and without the
+			// callbacks it has no entries and no resume action.
+			this.wireHistoryCallbacks(view);
+			return view;
+		});
 
 		this.registerView(VIEW_TYPE_CLAUDE_CHAT, (leaf) => {
 			const view = new ClaudeChatView(leaf);
@@ -53,7 +48,7 @@ export default class ClaudeVaultAssistant extends Plugin {
 			return view;
 		});
 
-		this.ribbonIconEl = this.addRibbonIcon(
+		this.addRibbonIcon(
 			"bot",
 			"Run Claude prompt",
 			() => this.openScopePickerAndRun()
@@ -82,29 +77,13 @@ export default class ClaudeVaultAssistant extends Plugin {
 			},
 		});
 
-		this.addCommand({
-			id: "stop-claude",
-			name: "Stop Claude",
-			checkCallback: (checking) => {
-				if (!this.promptRunner.isRunning) return false;
-				if (!checking) {
-					this.promptRunner.stop();
-					new Notice("Claude run stopped.");
-				}
-				return true;
-			},
-		});
-
-		this.addCommand({
-			id: "run-adhoc-prompt",
-			name: "Run ad-hoc Claude prompt",
-			callback: () => this.openAdhocPrompt(),
-		});
-
+		// Keeps the historical "open-output" id so existing hotkeys still work.
 		this.addCommand({
 			id: "open-output",
-			name: "Open Claude output",
-			callback: () => this.activateOutputView(),
+			name: "Open Claude history",
+			callback: () => {
+				void this.activateHistoryView();
+			},
 		});
 
 		this.addCommand({
@@ -123,15 +102,6 @@ export default class ClaudeVaultAssistant extends Plugin {
 			if (view instanceof ClaudeChatView) {
 				void view.shutdown();
 			}
-		}
-	}
-
-	private setRibbonRunning(running: boolean): void {
-		if (!this.ribbonIconEl) return;
-		if (running) {
-			this.ribbonIconEl.addClass("claude-ribbon-running");
-		} else {
-			this.ribbonIconEl.removeClass("claude-ribbon-running");
 		}
 	}
 
@@ -175,25 +145,6 @@ export default class ClaudeVaultAssistant extends Plugin {
 		picker.open();
 	}
 
-	private openAdhocPrompt(): void {
-		const hasActiveNote = !!this.app.workspace.getActiveFile();
-		const picker = new ScopePickerModal(
-			this.app,
-			hasActiveNote,
-			(scope) => {
-				const modal = new AdhocPromptModal(this.app, (promptText) => {
-					const name =
-						promptText.length > 40
-							? promptText.slice(0, 40) + "…"
-							: promptText;
-					void this.executeRun(scope, name, promptText, promptText);
-				});
-				modal.open();
-			}
-		);
-		picker.open();
-	}
-
 	private async openPickerAndRun(scope: RunScope): Promise<void> {
 		const prompts = scanPromptFiles(this.app.vault);
 		if (prompts.length === 0) {
@@ -220,196 +171,69 @@ export default class ClaudeVaultAssistant extends Plugin {
 			prompts,
 			(path) => readPromptContent(this.app.vault, path),
 			(result) => {
-				void this.executeRun(scope, result.name, result.content);
+				void this.launchPromptChat(scope, result.name, result.content);
 			},
 			overridesMap
 		);
 		picker.open();
 	}
 
-	private async executeRun(
+	/**
+	 * Start a chat session from a PROMPT-*.md file: frontmatter overrides merge
+	 * over the plugin settings, the prompt body auto-submits as the first
+	 * message, and the conversation continues interactively in the chat view.
+	 */
+	private async launchPromptChat(
 		scope: RunScope,
 		promptName: string,
-		rawPromptContent: string,
-		adhocPrompt?: string
+		rawPromptContent: string
 	): Promise<void> {
 		if (this.lock.isBusy) {
 			new Notice(`Claude is busy: ${this.lock.label ?? "another run"}.`);
 			return;
 		}
 
-		const view = await this.activateOutputView();
-		if (!view) {
-			new Notice("Could not open Claude output pane.");
-			return;
-		}
-
-		const { content: promptContent, overrides } = parsePromptFrontmatter(rawPromptContent);
+		const { content: promptContent, overrides } =
+			parsePromptFrontmatter(rawPromptContent);
 		const runSettings = hasOverrides(overrides)
 			? mergeOverrides(this.settings, overrides)
 			: this.settings;
 
-		view.clear();
-		view.switchTab("output");
-		view.setOnStop(() => {
-			// Deny any pending permission prompt so the awaited canUseTool
-			// resolves and stop() can unwind the in-flight turn.
-			view.cancelPendingPermissions("deny");
-			this.promptRunner.stop();
-			view.setStatus("stopped");
-			this.setRibbonRunning(false);
-			new Notice("Claude run stopped.");
-		});
-		view.setStatus("running");
-		this.setRibbonRunning(true);
-		const scopeLabel = scope === "note" ? "note" : "vault";
-		const runStartTime = Date.now();
-		view.showStatus(`Running "${promptName}" (${scopeLabel})…`);
-
-		const vaultPath = (this.app.vault.adapter as { basePath?: string }).basePath;
-		if (!vaultPath) {
-			new Notice("Could not determine vault path.");
-			return;
-		}
-
-		let activeNotePath: string | undefined;
-
+		let notePath: string | undefined;
 		if (scope === "note") {
 			const activeFile = this.app.workspace.getActiveFile();
 			if (!activeFile) {
 				new Notice("No active note.");
 				return;
 			}
-			activeNotePath = activeFile.path;
+			notePath = activeFile.path;
 		}
 
-		let systemPrompt: string | undefined;
-		const claudeMdFile = this.app.vault.getFileByPath("CLAUDE.md");
-		if (claudeMdFile) {
-			systemPrompt = await this.app.vault.read(claudeMdFile);
-		}
-
-		// Accumulate output text for history
-		let accumulatedOutput = "";
-		let lastCostUsd: number | undefined;
-		let lastTokens: number | undefined;
-
-		if (!this.lock.tryAcquire(`Prompt: ${promptName}`)) {
-			new Notice(`Claude is busy: ${this.lock.label ?? "another run"}.`);
-			view.setStatus("idle");
-			this.setRibbonRunning(false);
+		let message: string;
+		try {
+			message = buildPromptText(scope, promptContent, notePath);
+		} catch (err) {
+			new Notice(err instanceof Error ? err.message : String(err));
 			return;
 		}
 
-		const refresher = new VaultRefresher();
+		let extraSystemPrompt: string | undefined;
+		const claudeMdFile = this.app.vault.getFileByPath("CLAUDE.md");
+		if (claudeMdFile) {
+			extraSystemPrompt = await this.app.vault.read(claudeMdFile);
+		}
 
-		void this.promptRunner.run(
-			{
-				vaultPath,
-				settings: runSettings,
-				scope,
-				promptBody: promptContent,
-				activeNotePath,
-				extraSystemPrompt: systemPrompt,
-				requestPermission: (req) => view.promptPermission(req),
-			},
-			{
-				onAssistantText: (text) => {
-					view.appendText(text);
-					accumulatedOutput += text;
-					if (!text.endsWith("\n")) {
-						accumulatedOutput += "\n\n";
-					}
-				},
-				onToolUse: (tool) => {
-					view.showToolUse(tool.name, tool.filePath, tool.input, tool.id);
-					refresher.trackToolUse(tool.name, tool.filePath);
-				},
-				onToolResult: (result) => {
-					view.showToolResult(result.toolUseId, result.isError, result.content);
-				},
-				onResult: (result) => {
-					lastCostUsd = result.costUsd;
-					lastTokens = result.tokens;
-					view.showResult(result.costUsd, result.durationMs, result.tokens);
-				},
-				onUsage: (tokens) => {
-					view.setWorkingTokens(tokens);
-				},
-				onError: (message) => {
-					view.showError(message);
-				},
-				onComplete: (outcome) => {
-					this.setRibbonRunning(false);
-					this.lock.release();
-					view.cancelPendingPermissions("deny");
+		const view = await this.activateChatView();
+		if (!view) {
+			new Notice("Could not open Claude chat pane.");
+			return;
+		}
 
-					const durationMs = Date.now() - runStartTime;
-					const durationSec = (durationMs / 1000).toFixed(1);
-					let status: string;
-					let historyStatus: RunHistoryEntry["status"];
-
-					// Preserve a user-initiated stop; otherwise map the outcome.
-					if (view.getStatus() !== "stopped" && outcome.status !== "stopped") {
-						if (outcome.status === "limit") {
-							const reason =
-								outcome.limit === "max_turns" ? "max turns" : "budget";
-							view.showStatus(`Run stopped: ${reason} limit reached.`);
-							view.setStatus("limit");
-							status = "limit reached";
-							historyStatus = "limit";
-						} else if (outcome.status === "error") {
-							view.setStatus("error");
-							status = "error";
-							historyStatus = "error";
-						} else {
-							view.setStatus("complete");
-							status = "complete";
-							historyStatus = "success";
-						}
-						this.notifyRunComplete(promptName, status, durationSec);
-					} else {
-						historyStatus = "stopped";
-					}
-
-					// Record history entry
-					const entry: RunHistoryEntry = {
-						id: generateEntryId(),
-						promptName,
-						scope,
-						timestamp: runStartTime,
-						durationMs,
-						status: historyStatus,
-						costUsd: lastCostUsd,
-						tokens: lastTokens,
-						notePath: activeNotePath,
-						output: accumulatedOutput,
-						...(adhocPrompt !== undefined ? { prompt: adhocPrompt } : {}),
-					};
-					this.history = addEntry(
-						this.history,
-						entry,
-						this.settings.maxHistoryEntries
-					);
-					view.setHistory(this.history);
-					this.saveHistory().catch((err) => {
-						console.error("Failed to save run history:", err);
-					});
-
-					// Refresh any files modified by Claude
-					refresher.refreshModifiedFiles(this.app).catch((err) => {
-						console.error("Failed to refresh vault files:", err);
-					});
-				},
-			}
-		).catch((err) => {
-			// PromptRunner.run reports run failures via onError/onComplete; this
-			// only guards an unexpected rejection so the lock is never stuck.
-			this.setRibbonRunning(false);
-			this.lock.release();
-			view.cancelPendingPermissions("deny");
-			view.showError(err instanceof Error ? err.message : String(err));
-			view.setStatus("error");
+		await view.startPromptChat({
+			promptName,
+			message,
+			settings: runSettings,
+			extraSystemPrompt,
 		});
 	}
 
@@ -427,12 +251,35 @@ export default class ClaudeVaultAssistant extends Plugin {
 		}
 	}
 
-	async activateOutputView(): Promise<ClaudeOutputView | null> {
-		const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE_CLAUDE_OUTPUT);
+	/** Insert or update a chat session's history entry and persist it. */
+	private saveHistoryEntry(entry: RunHistoryEntry): void {
+		this.history = upsertEntry(
+			this.history,
+			entry,
+			this.settings.maxHistoryEntries
+		);
+		this.saveHistory().catch((err) => {
+			console.error("Failed to save run history:", err);
+		});
+		this.refreshHistoryViews();
+	}
+
+	/** Re-render any open history panes from the current history array. */
+	private refreshHistoryViews(): void {
+		for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_CLAUDE_HISTORY)) {
+			const view = leaf.view;
+			if (view instanceof ClaudeHistoryView) {
+				view.refresh();
+			}
+		}
+	}
+
+	async activateHistoryView(): Promise<ClaudeHistoryView | null> {
+		const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE_CLAUDE_HISTORY);
 		if (existing.length > 0) {
 			const leaf = existing[0]!;
 			await this.app.workspace.revealLeaf(leaf);
-			const view = leaf.view as ClaudeOutputView;
+			const view = leaf.view as ClaudeHistoryView;
 			this.wireHistoryCallbacks(view);
 			return view;
 		}
@@ -440,11 +287,11 @@ export default class ClaudeVaultAssistant extends Plugin {
 		const leaf = this.app.workspace.getRightLeaf(false);
 		if (!leaf) return null;
 		await leaf.setViewState({
-			type: VIEW_TYPE_CLAUDE_OUTPUT,
+			type: VIEW_TYPE_CLAUDE_HISTORY,
 			active: true,
 		});
 		await this.app.workspace.revealLeaf(leaf);
-		const view = leaf.view as ClaudeOutputView;
+		const view = leaf.view as ClaudeHistoryView;
 		this.wireHistoryCallbacks(view);
 		return view;
 	}
@@ -466,6 +313,12 @@ export default class ClaudeVaultAssistant extends Plugin {
 				const ref = this.app.workspace.on("active-leaf-change", () => cb());
 				return () => this.app.workspace.offref(ref);
 			},
+			saveHistoryEntry: (entry) => this.saveHistoryEntry(entry),
+			openHistory: () => {
+				void this.activateHistoryView();
+			},
+			notifyRunComplete: (name, status, durationSec) =>
+				this.notifyRunComplete(name, status, durationSec),
 		};
 	}
 
@@ -491,13 +344,20 @@ export default class ClaudeVaultAssistant extends Plugin {
 		return view;
 	}
 
-	private wireHistoryCallbacks(view: ClaudeOutputView): void {
-		view.setHistory(this.history);
+	private wireHistoryCallbacks(view: ClaudeHistoryView): void {
+		// Pull-based: the view reads the live array on every render, so it shows
+		// current history no matter when Obsidian constructs it.
+		view.setHistorySource(() => this.history);
 		view.setOnClearHistory(() => {
 			this.history = [];
-			view.setHistory(this.history);
+			this.refreshHistoryViews();
 			this.saveHistory().catch((err) => {
 				console.error("Failed to save cleared history:", err);
+			});
+		});
+		view.setOnResume((entry) => {
+			void this.activateChatView().then((chat) => {
+				if (chat) void chat.resumeFromHistory(entry);
 			});
 		});
 	}

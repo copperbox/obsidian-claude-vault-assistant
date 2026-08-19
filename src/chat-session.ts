@@ -1,6 +1,7 @@
 import type {
 	Options,
 	CanUseTool,
+	PermissionMode,
 	PermissionResult,
 	Query,
 	SDKMessage,
@@ -15,7 +16,11 @@ import type {
 } from "./permission-types";
 import { resolveSpawnEnv } from "./env-resolver";
 import { patchElectronEventTarget } from "./electron-compat";
-import { sumUsageTokens, outputTokensFromUsage } from "./format";
+import {
+	sumUsageTokens,
+	outputTokensFromUsage,
+	contextTokensFromUsage,
+} from "./format";
 
 // Re-export the permission contract so existing importers of these types from
 // "./chat-session" keep working; the canonical home is "./permission-types".
@@ -46,7 +51,11 @@ export interface ChatResult {
 }
 
 export interface ChatCallbacks {
-	onSystemInit?: (info: { model?: string; tools?: string[] }) => void;
+	onSystemInit?: (info: {
+		model?: string;
+		tools?: string[];
+		sessionId?: string;
+	}) => void;
 	onAssistantText: (text: string) => void;
 	onToolUse: (tool: ChatToolUse) => void;
 	onToolResult: (result: ChatToolResult) => void;
@@ -59,6 +68,18 @@ export interface ChatCallbacks {
 	 * time an assistant message arrives. Drives the live working indicator.
 	 */
 	onUsage?: (tokens: number) => void;
+	/**
+	 * Approximate context-window occupancy (tokens) reported by the latest
+	 * assistant message. Drives the live context ring between the exact
+	 * getContextUsage() refreshes at turn boundaries.
+	 */
+	onContextSize?: (tokens: number) => void;
+}
+
+/** Current context-window occupancy, from the CLI's get_context_usage. */
+export interface ContextUsage {
+	usedTokens: number;
+	maxTokens: number;
 }
 
 export type QueryFn = (params: {
@@ -79,13 +100,16 @@ export interface ChatSessionConfig {
 	extraSystemPrompt?: string;
 	/** Pass --no-session-persistence so the run leaves no stored session. */
 	disableSessionPersistence?: boolean;
+	/** Resume a persisted CLI session instead of starting fresh. */
+	resumeSessionId?: string;
 }
 
 /**
- * Build the Agent SDK options for an interactive chat. Mirrors the one-off
- * runner's posture: the allowedTools whitelist auto-approves, permissionMode
- * "default" makes anything else prompt (handled by canUseTool), and the
- * Obsidian wiki-link instructions are appended to the default system prompt.
+ * Build the Agent SDK options for an interactive chat: the allowedTools
+ * whitelist auto-approves, the configured permissionMode governs everything
+ * else (in "default" mode anything not whitelisted prompts via canUseTool),
+ * and the Obsidian wiki-link instructions are appended to the default system
+ * prompt.
  */
 export function buildChatOptions(params: {
 	vaultPath: string;
@@ -96,6 +120,8 @@ export function buildChatOptions(params: {
 	extraSystemPrompt?: string;
 	/** Pass --no-session-persistence so the run leaves no stored session. */
 	disableSessionPersistence?: boolean;
+	/** Resume a persisted CLI session instead of starting fresh. */
+	resumeSessionId?: string;
 }): Options {
 	const {
 		vaultPath,
@@ -104,6 +130,7 @@ export function buildChatOptions(params: {
 		canUseTool,
 		extraSystemPrompt,
 		disableSessionPersistence,
+		resumeSessionId,
 	} = params;
 
 	const append = extraSystemPrompt
@@ -113,7 +140,7 @@ export function buildChatOptions(params: {
 	const options: Options = {
 		cwd: vaultPath,
 		pathToClaudeCodeExecutable: settings.cliPath,
-		permissionMode: "default",
+		permissionMode: settings.permissionMode,
 		allowedTools: settings.allowedTools,
 		systemPrompt: {
 			type: "preset",
@@ -130,6 +157,12 @@ export function buildChatOptions(params: {
 	}
 	if (settings.modelOverride) {
 		options.model = settings.modelOverride;
+	}
+	if (settings.effort) {
+		options.effort = settings.effort;
+	}
+	if (resumeSessionId) {
+		options.resume = resumeSessionId;
 	}
 
 	const extraArgs: Record<string, string | null> = {};
@@ -214,6 +247,7 @@ export class ChatSession {
 	private readonly sessionAllowed = new Set<string>();
 
 	private query: Query | null = null;
+	private currentSessionId: string | null = null;
 	private started = false;
 	private disposed = false;
 	private turnActive = false;
@@ -247,6 +281,7 @@ export class ChatSession {
 			canUseTool: this.canUseTool,
 			extraSystemPrompt: this.config.extraSystemPrompt,
 			disableSessionPersistence: this.config.disableSessionPersistence,
+			resumeSessionId: this.config.resumeSessionId,
 		});
 
 		this.query = await this.queryFn({ prompt: this.inputQueue, options });
@@ -272,6 +307,40 @@ export class ChatSession {
 		if (!this.query) return;
 		try {
 			await this.query.setModel(model);
+		} catch (err) {
+			this.config.callbacks.onError(errToString(err));
+		}
+	}
+
+	/**
+	 * Exact context-window usage from the CLI, or null when the session hasn't
+	 * started or the control request isn't supported/fails.
+	 */
+	async getContextUsage(): Promise<ContextUsage | null> {
+		if (!this.query) return null;
+		try {
+			const usage = await this.query.getContextUsage();
+			if (
+				typeof usage?.totalTokens !== "number" ||
+				typeof usage?.maxTokens !== "number" ||
+				usage.maxTokens <= 0
+			) {
+				return null;
+			}
+			return { usedTokens: usage.totalTokens, maxTokens: usage.maxTokens };
+		} catch {
+			return null;
+		}
+	}
+
+	/**
+	 * Switch the permission mode for the live conversation. No-op if the session
+	 * hasn't started yet (the chosen mode is applied via options when it does).
+	 */
+	async setPermissionMode(mode: PermissionMode): Promise<void> {
+		if (!this.query) return;
+		try {
+			await this.query.setPermissionMode(mode);
 		} catch (err) {
 			this.config.callbacks.onError(errToString(err));
 		}
@@ -349,14 +418,26 @@ export class ChatSession {
 		}
 	}
 
+	/**
+	 * The CLI session id for this conversation, once known. Every SDK message
+	 * carries session_id, so this is tracked from all of them (not just the
+	 * init message) — it's what makes a conversation resumable later.
+	 */
+	get sessionId(): string | null {
+		return this.currentSessionId;
+	}
+
 	private handleMessage(msg: SDKMessage): void {
 		const data = msg as unknown as Record<string, unknown>;
+		const sid = asString(data["session_id"]);
+		if (sid) this.currentSessionId = sid;
 		switch (msg.type) {
 			case "system":
 				if (data["subtype"] === "init") {
 					this.config.callbacks.onSystemInit?.({
 						model: asString(data["model"]),
 						tools: asStringArray(data["tools"]),
+						sessionId: asString(data["session_id"]),
 					});
 				}
 				break;
@@ -384,6 +465,13 @@ export class ChatSession {
 		if (stepTokens > 0) {
 			this.turnOutputTokens += stepTokens;
 			this.config.callbacks.onUsage?.(this.turnOutputTokens);
+		}
+
+		// Each message also reports the full context it was sent with; the
+		// latest value approximates current context-window occupancy.
+		const contextTokens = contextTokensFromUsage(message?.["usage"]);
+		if (contextTokens > 0) {
+			this.config.callbacks.onContextSize?.(contextTokens);
 		}
 
 		const content = message?.["content"];

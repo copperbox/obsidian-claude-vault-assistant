@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
 	sumUsageTokens,
 	outputTokensFromUsage,
+	contextTokensFromUsage,
 	formatTokens,
 	formatResultMeta,
 } from "../format";
@@ -82,5 +83,24 @@ describe("formatResultMeta", () => {
 
 	it("returns an empty string when nothing is available", () => {
 		expect(formatResultMeta({})).toBe("");
+	});
+});
+
+describe("contextTokensFromUsage", () => {
+	it("sums prompt, cache buckets and output into context occupancy", () => {
+		expect(
+			contextTokensFromUsage({
+				input_tokens: 10,
+				cache_creation_input_tokens: 500,
+				cache_read_input_tokens: 40000,
+				output_tokens: 90,
+			})
+		).toBe(40600);
+	});
+
+	it("returns 0 when usage is missing or malformed", () => {
+		expect(contextTokensFromUsage(undefined)).toBe(0);
+		expect(contextTokensFromUsage("nope")).toBe(0);
+		expect(contextTokensFromUsage({})).toBe(0);
 	});
 });

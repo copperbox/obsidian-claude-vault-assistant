@@ -117,6 +117,40 @@ Prompt.`;
 		expect(result.overrides.maxBudget).toBeUndefined();
 	});
 
+	it("extracts a valid effort override", () => {
+		const raw = `---
+effort: xhigh
+---
+Prompt.`;
+		expect(parsePromptFrontmatter(raw).overrides.effort).toBe("xhigh");
+	});
+
+	it("ignores an invalid effort value", () => {
+		const raw = `---
+effort: turbo
+---
+Prompt.`;
+		expect(parsePromptFrontmatter(raw).overrides.effort).toBeUndefined();
+	});
+
+	it("extracts a valid permissionMode override", () => {
+		const raw = `---
+permissionMode: acceptEdits
+---
+Prompt.`;
+		expect(parsePromptFrontmatter(raw).overrides.permissionMode).toBe(
+			"acceptEdits"
+		);
+	});
+
+	it("rejects bypassPermissions as a permissionMode override", () => {
+		const raw = `---
+permissionMode: bypassPermissions
+---
+Prompt.`;
+		expect(parsePromptFrontmatter(raw).overrides.permissionMode).toBeUndefined();
+	});
+
 	it("handles empty frontmatter block", () => {
 		const raw = `---
 ---
@@ -172,17 +206,31 @@ describe("mergeOverrides", () => {
 		expect(result.maxBudget).toBe(1.5);
 	});
 
+	it("overrides effort", () => {
+		const result = mergeOverrides(DEFAULT_SETTINGS, { effort: "low" });
+		expect(result.effort).toBe("low");
+	});
+
+	it("overrides permissionMode", () => {
+		const result = mergeOverrides(DEFAULT_SETTINGS, { permissionMode: "plan" });
+		expect(result.permissionMode).toBe("plan");
+	});
+
 	it("applies all overrides at once", () => {
 		const result = mergeOverrides(DEFAULT_SETTINGS, {
 			model: "haiku",
 			allowedTools: ["Read", "Grep"],
 			maxTurns: 5,
 			maxBudget: 0.5,
+			effort: "medium",
+			permissionMode: "auto",
 		});
 		expect(result.modelOverride).toBe("haiku");
 		expect(result.allowedTools).toEqual(["Read", "Grep"]);
 		expect(result.maxTurns).toBe(5);
 		expect(result.maxBudget).toBe(0.5);
+		expect(result.effort).toBe("medium");
+		expect(result.permissionMode).toBe("auto");
 		// cliPath should remain unchanged
 		expect(result.cliPath).toBe(DEFAULT_SETTINGS.cliPath);
 	});

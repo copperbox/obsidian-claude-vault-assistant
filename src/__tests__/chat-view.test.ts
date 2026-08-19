@@ -17,6 +17,11 @@ function makeFakeSession() {
 		interrupt: vi.fn(async () => {}),
 		dispose: vi.fn(async () => {}),
 		setModel: vi.fn(async () => {}),
+		setPermissionMode: vi.fn(async () => {}),
+		getContextUsage: vi.fn(async () => ({
+			usedTokens: 60_000,
+			maxTokens: 200_000,
+		})),
 		isTurnActive: false,
 		sessionAllowedTools: [],
 	};
@@ -242,6 +247,142 @@ describe("ClaudeChatView", () => {
 		expect(deps.createSession).not.toHaveBeenCalled();
 	});
 
+	it("starts the session with the settings' effort and permission mode", async () => {
+		const { view, deps } = makeView({
+			getSettings: () => ({
+				...DEFAULT_SETTINGS,
+				effort: "xhigh" as const,
+				permissionMode: "acceptEdits" as const,
+			}),
+		});
+		// Rebuild header controls now that deps carry non-default settings.
+		await view.onOpen();
+		(view as unknown as { inputEl: { value: string } }).inputEl.value = "hi";
+
+		await (view as unknown as { handleSend: () => Promise<void> }).handleSend();
+
+		const config = (deps.createSession as ReturnType<typeof vi.fn>).mock
+			.calls[0]![0] as { settings: { effort: string; permissionMode: string } };
+		expect(config.settings.effort).toBe("xhigh");
+		expect(config.settings.permissionMode).toBe("acceptEdits");
+	});
+
+	it("applies a permission mode change live to a running session", async () => {
+		const { view, fakeSession } = makeView();
+		(view as unknown as { inputEl: { value: string } }).inputEl.value = "hi";
+		await (view as unknown as { handleSend: () => Promise<void> }).handleSend();
+
+		(view as unknown as { permissionSelect: { value: string } }).permissionSelect.value =
+			"plan";
+		(view as unknown as { handlePermissionChange: () => void }).handlePermissionChange();
+
+		expect(fakeSession.setPermissionMode).toHaveBeenCalledWith("plan");
+	});
+
+	it("defers an effort change to the next session", async () => {
+		const { view, fakeSession } = makeView();
+		(view as unknown as { inputEl: { value: string } }).inputEl.value = "hi";
+		await (view as unknown as { handleSend: () => Promise<void> }).handleSend();
+
+		(view as unknown as { effortSelect: { value: string } }).effortSelect.value =
+			"low";
+		(view as unknown as { handleEffortChange: () => void }).handleEffortChange();
+
+		// No live SDK switch exists for effort; only the selection changes.
+		expect(fakeSession.setModel).not.toHaveBeenCalled();
+		expect(
+			(view as unknown as { selectedEffort: string }).selectedEffort
+		).toBe("low");
+	});
+
+	it("records a history entry with session id after a turn", async () => {
+		const saveHistoryEntry = vi.fn();
+		const { view, deps } = makeView({ saveHistoryEntry });
+		(view as unknown as { inputEl: { value: string } }).inputEl.value = "hello world";
+		await (view as unknown as { handleSend: () => Promise<void> }).handleSend();
+
+		const config = (deps.createSession as ReturnType<typeof vi.fn>).mock
+			.calls[0]![0] as {
+			callbacks: {
+				onSystemInit: (i: { sessionId?: string }) => void;
+				onAssistantText: (t: string) => void;
+				onResult: (r: Record<string, unknown>) => void;
+				onTurnEnd: () => void;
+			};
+		};
+		config.callbacks.onSystemInit({ sessionId: "sess-1" });
+		config.callbacks.onAssistantText("Sure thing.");
+		config.callbacks.onResult({
+			costUsd: 0.02,
+			tokens: 100,
+			durationMs: 1500,
+			isError: false,
+			subtype: "success",
+		});
+		config.callbacks.onTurnEnd();
+
+		expect(saveHistoryEntry).toHaveBeenCalledOnce();
+		const entry = saveHistoryEntry.mock.calls[0]![0] as Record<string, unknown>;
+		expect(entry.promptName).toBe("hello world");
+		expect(entry.sessionId).toBe("sess-1");
+		expect(entry.costUsd).toBe(0.02);
+		expect(entry.tokens).toBe(100);
+		expect(entry.status).toBe("success");
+		expect(String(entry.output)).toContain("Sure thing.");
+	});
+
+	it("accumulates cost and tokens across turns into the same entry", async () => {
+		const saveHistoryEntry = vi.fn();
+		const { view, deps } = makeView({ saveHistoryEntry });
+		(view as unknown as { inputEl: { value: string } }).inputEl.value = "hello";
+		await (view as unknown as { handleSend: () => Promise<void> }).handleSend();
+
+		const config = (deps.createSession as ReturnType<typeof vi.fn>).mock
+			.calls[0]![0] as {
+			callbacks: {
+				onResult: (r: Record<string, unknown>) => void;
+				onTurnEnd: () => void;
+			};
+		};
+		config.callbacks.onResult({ costUsd: 0.01, tokens: 50, isError: false, subtype: "success" });
+		config.callbacks.onTurnEnd();
+		config.callbacks.onResult({ costUsd: 0.03, tokens: 70, isError: false, subtype: "success" });
+		config.callbacks.onTurnEnd();
+
+		expect(saveHistoryEntry).toHaveBeenCalledTimes(2);
+		const first = saveHistoryEntry.mock.calls[0]![0] as { id: string; costUsd: number };
+		const second = saveHistoryEntry.mock.calls[1]![0] as {
+			id: string;
+			costUsd: number;
+			tokens: number;
+		};
+		expect(second.id).toBe(first.id);
+		expect(second.costUsd).toBeCloseTo(0.04);
+		expect(second.tokens).toBe(120);
+	});
+
+	it("syncs the context ring to the CLI's exact usage after a turn", async () => {
+		const saveHistoryEntry = vi.fn();
+		const { view, deps, fakeSession } = makeView({ saveHistoryEntry });
+		(view as unknown as { inputEl: { value: string } }).inputEl.value = "hi";
+		await (view as unknown as { handleSend: () => Promise<void> }).handleSend();
+
+		const config = (deps.createSession as ReturnType<typeof vi.fn>).mock
+			.calls[0]![0] as { callbacks: { onTurnEnd: () => void } };
+		config.callbacks.onTurnEnd();
+		await new Promise((r) => setTimeout(r, 0));
+
+		expect(fakeSession.getContextUsage).toHaveBeenCalled();
+		expect(
+			(view as unknown as { contextMaxTokens: number }).contextMaxTokens
+		).toBe(200_000);
+
+		// The exact usage is upserted into the same history entry once known.
+		const last = saveHistoryEntry.mock.calls.at(-1)![0] as Record<string, unknown>;
+		expect(last.contextTokens).toBe(60_000);
+		expect(last.contextWindow).toBe(200_000);
+	});
+
 	it("releases the lock and disposes the session on close", async () => {
 		const { view, lock, fakeSession } = makeView();
 		(view as unknown as { inputEl: { value: string } }).inputEl.value = "hello";
@@ -252,5 +393,191 @@ describe("ClaudeChatView", () => {
 
 		expect(fakeSession.dispose).toHaveBeenCalled();
 		expect(lock.isBusy).toBe(false);
+	});
+});
+
+describe("ClaudeChatView.startPromptChat", () => {
+	beforeEach(() => vi.clearAllMocks());
+
+	function makeLaunch() {
+		return {
+			promptName: "Daily",
+			message: "Summarize my day.",
+			settings: {
+				...DEFAULT_SETTINGS,
+				modelOverride: "opus",
+				effort: "low" as const,
+				permissionMode: "acceptEdits" as const,
+				allowedTools: ["Read"],
+			},
+			extraSystemPrompt: "Vault house rules.",
+		};
+	}
+
+	it("starts a session with the merged settings and auto-submits the prompt", async () => {
+		const { view, deps, fakeSession, lock } = makeView();
+
+		await view.startPromptChat(makeLaunch());
+
+		const config = (deps.createSession as ReturnType<typeof vi.fn>).mock
+			.calls[0]![0] as {
+			settings: Record<string, unknown>;
+			extraSystemPrompt?: string;
+		};
+		expect(config.settings.modelOverride).toBe("opus");
+		expect(config.settings.effort).toBe("low");
+		expect(config.settings.permissionMode).toBe("acceptEdits");
+		expect(config.settings.allowedTools).toEqual(["Read"]);
+		expect(config.extraSystemPrompt).toBe("Vault house rules.");
+		expect(fakeSession.start).toHaveBeenCalledOnce();
+		expect(fakeSession.send).toHaveBeenCalledWith("Summarize my day.");
+		expect(lock.isBusy).toBe(true);
+	});
+
+	it("syncs the header dropdown selections to the launch settings", async () => {
+		const { view } = makeView();
+
+		await view.startPromptChat(makeLaunch());
+
+		const v = view as unknown as {
+			selectedModel: string;
+			selectedEffort: string;
+			selectedPermissionMode: string;
+		};
+		expect(v.selectedModel).toBe("opus");
+		expect(v.selectedEffort).toBe("low");
+		expect(v.selectedPermissionMode).toBe("acceptEdits");
+	});
+
+	it("does not start when another activity holds the lock", async () => {
+		const { view, deps, lock } = makeView();
+		lock.tryAcquire("something else");
+
+		await view.startPromptChat(makeLaunch());
+
+		expect(deps.createSession).not.toHaveBeenCalled();
+	});
+
+	it("uses the prompt name for the history entry", async () => {
+		const saveHistoryEntry = vi.fn();
+		const { view, deps } = makeView({ saveHistoryEntry });
+
+		await view.startPromptChat(makeLaunch());
+		const config = (deps.createSession as ReturnType<typeof vi.fn>).mock
+			.calls[0]![0] as {
+			callbacks: { onResult: (r: Record<string, unknown>) => void; onTurnEnd: () => void };
+		};
+		config.callbacks.onResult({ isError: false, subtype: "success" });
+		config.callbacks.onTurnEnd();
+
+		const entry = saveHistoryEntry.mock.calls[0]![0] as { promptName: string };
+		expect(entry.promptName).toBe("Daily");
+	});
+
+	it("notifies once when the auto-submitted first turn settles", async () => {
+		const notifyRunComplete = vi.fn();
+		const { view, deps } = makeView({ notifyRunComplete });
+
+		await view.startPromptChat(makeLaunch());
+		const config = (deps.createSession as ReturnType<typeof vi.fn>).mock
+			.calls[0]![0] as {
+			callbacks: { onResult: (r: Record<string, unknown>) => void; onTurnEnd: () => void };
+		};
+		config.callbacks.onResult({ isError: false, subtype: "success" });
+		config.callbacks.onTurnEnd();
+		config.callbacks.onResult({ isError: false, subtype: "success" });
+		config.callbacks.onTurnEnd();
+
+		expect(notifyRunComplete).toHaveBeenCalledTimes(1);
+		expect(notifyRunComplete.mock.calls[0]![0]).toBe("Daily");
+		expect(notifyRunComplete.mock.calls[0]![1]).toBe("complete");
+	});
+});
+
+describe("ClaudeChatView.resumeFromHistory", () => {
+	beforeEach(() => vi.clearAllMocks());
+
+	function makeEntry(overrides: Record<string, unknown> = {}) {
+		return {
+			id: "entry-1",
+			promptName: "Old chat",
+			timestamp: 1700000000000,
+			durationMs: 4000,
+			status: "success" as const,
+			costUsd: 0.05,
+			tokens: 500,
+			output: "Prior answer.",
+			sessionId: "sess-old",
+			...overrides,
+		};
+	}
+
+	it("resumes the stored session id on the next send", async () => {
+		const { view, deps, fakeSession } = makeView();
+
+		await view.resumeFromHistory(makeEntry());
+		(view as unknown as { inputEl: { value: string } }).inputEl.value = "continue";
+		await (view as unknown as { handleSend: () => Promise<void> }).handleSend();
+
+		const config = (deps.createSession as ReturnType<typeof vi.fn>).mock
+			.calls[0]![0] as { resumeSessionId?: string };
+		expect(config.resumeSessionId).toBe("sess-old");
+		expect(fakeSession.send).toHaveBeenCalledWith("continue");
+	});
+
+	it("keeps updating the original history entry", async () => {
+		const saveHistoryEntry = vi.fn();
+		const { view, deps } = makeView({ saveHistoryEntry });
+
+		await view.resumeFromHistory(makeEntry());
+		(view as unknown as { inputEl: { value: string } }).inputEl.value = "continue";
+		await (view as unknown as { handleSend: () => Promise<void> }).handleSend();
+
+		const config = (deps.createSession as ReturnType<typeof vi.fn>).mock
+			.calls[0]![0] as {
+			callbacks: { onResult: (r: Record<string, unknown>) => void; onTurnEnd: () => void };
+		};
+		config.callbacks.onResult({
+			costUsd: 0.01,
+			tokens: 100,
+			isError: false,
+			subtype: "success",
+		});
+		config.callbacks.onTurnEnd();
+
+		const entry = saveHistoryEntry.mock.calls[0]![0] as Record<string, unknown>;
+		expect(entry.id).toBe("entry-1");
+		expect(entry.promptName).toBe("Old chat");
+		expect(entry.costUsd).toBeCloseTo(0.06);
+		expect(entry.tokens).toBe(600);
+		expect(entry.sessionId).toBe("sess-old");
+		expect(String(entry.output)).toContain("Prior answer.");
+	});
+
+	it("restores the context gauge from the resumed entry", async () => {
+		const { view } = makeView();
+
+		await view.resumeFromHistory(
+			makeEntry({ contextTokens: 120_000, contextWindow: 200_000 })
+		);
+
+		const v = view as unknown as {
+			contextUsedTokens: number;
+			contextMaxTokens: number;
+		};
+		expect(v.contextUsedTokens).toBe(120_000);
+		expect(v.contextMaxTokens).toBe(200_000);
+	});
+
+	it("refuses to resume an entry without a session id", async () => {
+		const { view, deps } = makeView();
+
+		await view.resumeFromHistory(makeEntry({ sessionId: undefined }));
+		(view as unknown as { inputEl: { value: string } }).inputEl.value = "hi";
+		await (view as unknown as { handleSend: () => Promise<void> }).handleSend();
+
+		const config = (deps.createSession as ReturnType<typeof vi.fn>).mock
+			.calls[0]![0] as { resumeSessionId?: string };
+		expect(config.resumeSessionId).toBeUndefined();
 	});
 });

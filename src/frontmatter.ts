@@ -1,10 +1,18 @@
-import type { PluginSettings } from "./settings";
+import {
+	isEffortSetting,
+	isPermissionMode,
+	type ChatPermissionMode,
+	type EffortLevel,
+	type PluginSettings,
+} from "./settings";
 
 export interface PromptOverrides {
 	allowedTools?: string[];
 	model?: string;
 	maxTurns?: number;
 	maxBudget?: number;
+	effort?: EffortLevel;
+	permissionMode?: ChatPermissionMode;
 }
 
 export interface ParsedPrompt {
@@ -59,6 +67,13 @@ function parseOverrides(yaml: string): PromptOverrides {
 				if (!isNaN(n) && n > 0) overrides.maxBudget = n;
 				break;
 			}
+			case "effort":
+				// "" would mean "no override"; only accept a real level.
+				if (isEffortSetting(value) && value !== "") overrides.effort = value;
+				break;
+			case "permissionMode":
+				if (isPermissionMode(value)) overrides.permissionMode = value;
+				break;
 		}
 	}
 
@@ -106,5 +121,9 @@ export function mergeOverrides(settings: PluginSettings, overrides: PromptOverri
 		...(overrides.model !== undefined && { modelOverride: overrides.model }),
 		...(overrides.maxTurns !== undefined && { maxTurns: overrides.maxTurns }),
 		...(overrides.maxBudget !== undefined && { maxBudget: overrides.maxBudget }),
+		...(overrides.effort !== undefined && { effort: overrides.effort }),
+		...(overrides.permissionMode !== undefined && {
+			permissionMode: overrides.permissionMode,
+		}),
 	};
 }

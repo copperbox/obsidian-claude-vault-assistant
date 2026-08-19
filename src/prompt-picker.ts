@@ -151,5 +151,7 @@ export function formatOverrideBadges(overrides: PromptOverrides): string {
 	if (overrides.allowedTools) badges.push(`${overrides.allowedTools.length} tools`);
 	if (overrides.maxTurns) badges.push(`${overrides.maxTurns} turns`);
 	if (overrides.maxBudget) badges.push(`$${overrides.maxBudget}`);
+	if (overrides.effort) badges.push(`effort: ${overrides.effort}`);
+	if (overrides.permissionMode) badges.push(overrides.permissionMode);
 	return badges.length > 0 ? ` [${badges.join(", ")}]` : "";
 }

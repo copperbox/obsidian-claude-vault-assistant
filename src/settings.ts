@@ -1,6 +1,35 @@
 import { App, PluginSettingTab, Setting } from "obsidian";
 import type ClaudeVaultAssistant from "./main";
 
+/** Effort levels the Agent SDK accepts; "" means let the SDK/CLI decide. */
+export const EFFORT_LEVELS = ["low", "medium", "high", "xhigh", "max"] as const;
+export type EffortLevel = (typeof EFFORT_LEVELS)[number];
+export type EffortSetting = "" | EffortLevel;
+
+/**
+ * Permission modes exposed by the plugin. Deliberately excludes
+ * "bypassPermissions" (skips the permission cards entirely) and "dontAsk"
+ * (silently denies everything not whitelisted).
+ */
+export const PERMISSION_MODES = ["default", "acceptEdits", "plan", "auto"] as const;
+export type ChatPermissionMode = (typeof PERMISSION_MODES)[number];
+
+export const PERMISSION_MODE_LABELS: Record<ChatPermissionMode, string> = {
+	default: "Prompt (default)",
+	acceptEdits: "Accept edits",
+	plan: "Plan",
+	auto: "Auto",
+};
+
+export const EFFORT_LABELS: Record<EffortSetting, string> = {
+	"": "Default",
+	low: "Low",
+	medium: "Medium",
+	high: "High",
+	xhigh: "xHigh",
+	max: "Max",
+};
+
 export interface PluginSettings {
 	allowedTools: string[];
 	cliPath: string;
@@ -8,6 +37,10 @@ export interface PluginSettings {
 	maxBudget: number | null;
 	modelOverride: string;
 	maxHistoryEntries: number;
+	/** Default reasoning effort for new sessions; "" = SDK default. */
+	effort: EffortSetting;
+	/** Default permission mode for new sessions. */
+	permissionMode: ChatPermissionMode;
 }
 
 export const DEFAULT_SETTINGS: PluginSettings = {
@@ -17,10 +50,30 @@ export const DEFAULT_SETTINGS: PluginSettings = {
 	maxBudget: null,
 	modelOverride: "",
 	maxHistoryEntries: 50,
+	effort: "",
+	permissionMode: "default",
 };
 
+export function isEffortSetting(value: unknown): value is EffortSetting {
+	return value === "" || EFFORT_LEVELS.includes(value as EffortLevel);
+}
+
+export function isPermissionMode(value: unknown): value is ChatPermissionMode {
+	return PERMISSION_MODES.includes(value as ChatPermissionMode);
+}
+
 export function parseSettings(data: unknown): PluginSettings {
-	return Object.assign({}, DEFAULT_SETTINGS, data as Partial<PluginSettings>);
+	const merged = Object.assign(
+		{},
+		DEFAULT_SETTINGS,
+		data as Partial<PluginSettings>
+	);
+	// Sanitize enum-ish fields loaded from disk (older data, hand edits).
+	if (!isEffortSetting(merged.effort)) merged.effort = DEFAULT_SETTINGS.effort;
+	if (!isPermissionMode(merged.permissionMode)) {
+		merged.permissionMode = DEFAULT_SETTINGS.permissionMode;
+	}
+	return merged;
 }
 
 export class ClaudeVaultSettingTab extends PluginSettingTab {
@@ -116,6 +169,44 @@ export class ClaudeVaultSettingTab extends PluginSettingTab {
 						await this.plugin.saveSettings();
 					})
 			);
+
+		new Setting(containerEl)
+			.setName("Effort")
+			.setDesc(
+				"Default reasoning effort for new sessions. Higher levels think longer; unsupported levels fall back per model."
+			)
+			.addDropdown((dropdown) => {
+				for (const [value, label] of Object.entries(EFFORT_LABELS)) {
+					dropdown.addOption(value, label);
+				}
+				dropdown
+					.setValue(this.plugin.settings.effort)
+					.onChange(async (value) => {
+						if (isEffortSetting(value)) {
+							this.plugin.settings.effort = value;
+							await this.plugin.saveSettings();
+						}
+					});
+			});
+
+		new Setting(containerEl)
+			.setName("Permission mode")
+			.setDesc(
+				"Default permission mode for new sessions. Prompting asks before each non-whitelisted tool. Accept edits auto-approves file edits. Plan only plans without executing tools. Auto decides per action."
+			)
+			.addDropdown((dropdown) => {
+				for (const [value, label] of Object.entries(PERMISSION_MODE_LABELS)) {
+					dropdown.addOption(value, label);
+				}
+				dropdown
+					.setValue(this.plugin.settings.permissionMode)
+					.onChange(async (value) => {
+						if (isPermissionMode(value)) {
+							this.plugin.settings.permissionMode = value;
+							await this.plugin.saveSettings();
+						}
+					});
+			});
 
 		new Setting(containerEl)
 			.setName("Max history entries")

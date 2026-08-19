@@ -1,6 +1,20 @@
 import { ItemView, MarkdownRenderer, Notice, type WorkspaceLeaf } from "obsidian";
-import type { PluginSettings } from "./settings";
+import {
+	EFFORT_LABELS,
+	PERMISSION_MODE_LABELS,
+	isEffortSetting,
+	isPermissionMode,
+	type ChatPermissionMode,
+	type EffortSetting,
+	type PluginSettings,
+} from "./settings";
 import type { ActivityLock } from "./activity-lock";
+import {
+	type RunHistoryEntry,
+	formatTimestamp,
+	generateEntryId,
+} from "./run-history";
+import { VaultRefresher } from "./vault-refresher";
 import { ChatSession, type ChatSessionConfig } from "./chat-session";
 import type { PermissionDecision, PermissionRequest } from "./permission-types";
 import {
@@ -12,7 +26,7 @@ import {
 	renderToolCall,
 	renderToolResult,
 } from "./tool-render";
-import { formatResultMeta } from "./format";
+import { formatResultMeta, formatTokens } from "./format";
 import { labelCodeBlocks } from "./code-block";
 import { WorkingIndicator } from "./working-indicator";
 import {
@@ -104,9 +118,39 @@ export interface ChatViewDeps {
 	 * switches the focused note. Returns an unsubscribe function. Optional.
 	 */
 	onActiveNoteChange?: (cb: () => void) => () => void;
+	/**
+	 * Persist (insert or update) the history entry for the current chat
+	 * session. Called after every completed turn. Optional.
+	 */
+	saveHistoryEntry?: (entry: RunHistoryEntry) => void;
+	/** Reveal the history pane (the header History button). Optional. */
+	openHistory?: () => void;
+	/**
+	 * Notify the user that a prompt-launched run finished its first turn
+	 * (Notice + system notification when unfocused). Optional.
+	 */
+	notifyRunComplete?: (
+		promptName: string,
+		status: string,
+		durationSec: string
+	) => void;
+}
+
+/** Everything the chat view needs to launch a PROMPT-file-driven session. */
+export interface PromptChatLaunch {
+	promptName: string;
+	/** Full first message, including any note-scope restriction prefix. */
+	message: string;
+	/** Merged settings: prompt frontmatter overrides over plugin defaults. */
+	settings: PluginSettings;
+	/** Extra system prompt text (e.g. vault CLAUDE.md). */
+	extraSystemPrompt?: string;
 }
 
 const LOCK_LABEL = "Interactive chat turn";
+
+/** Assumed context window until getContextUsage reports the real one. */
+const DEFAULT_CONTEXT_WINDOW = 200_000;
 
 export class ClaudeChatView extends ItemView {
 	private deps: ChatViewDeps | null = null;
@@ -118,8 +162,45 @@ export class ClaudeChatView extends ItemView {
 	private stopBtn: HTMLButtonElement | null = null;
 	private statusEl: HTMLElement | null = null;
 	private modelSelect: HTMLSelectElement | null = null;
+	private effortSelect: HTMLSelectElement | null = null;
+	private permissionSelect: HTMLSelectElement | null = null;
 	/** Model for this conversation; "" means let the CLI decide. */
 	private selectedModel = "";
+	/** Effort for this conversation; applied when the next session starts. */
+	private selectedEffort: EffortSetting = "";
+	/** Permission mode for this conversation; switchable live mid-session. */
+	private selectedPermissionMode: ChatPermissionMode = "default";
+
+	/** Per-launch settings from a PROMPT file; null for a plain chat. */
+	private launchSettings: PluginSettings | null = null;
+	private launchExtraSystemPrompt: string | undefined;
+	/** CLI session to resume instead of starting fresh (from history). */
+	private resumeSessionId: string | null = null;
+	/** Live session id captured from the SDK init message. */
+	private sessionId: string | null = null;
+
+	/** Refreshes Obsidian's cache for files Claude modified during a turn. */
+	private refresher = new VaultRefresher();
+
+	/** Circular context-window gauge at the right of the settings bar. */
+	private contextRingEl: HTMLElement | null = null;
+	/** Context window size from getContextUsage; 0 until first known. */
+	private contextMaxTokens = 0;
+	/** Latest context occupancy shown on the ring; persisted to history. */
+	private contextUsedTokens = 0;
+
+	// History bookkeeping: one entry per chat session, updated every turn.
+	private historyId: string | null = null;
+	private historyName: string | null = null;
+	private historyTimestamp = 0;
+	private historyOutput = "";
+	private historyDurationMs = 0;
+	private historyCostUsd: number | undefined;
+	private historyTokens: number | undefined;
+	private historyStatus: RunHistoryEntry["status"] = "success";
+	private completedTurns = 0;
+	private turnStartedAt = 0;
+	private lastTurnDurationMs: number | undefined;
 
 	private currentAssistantEl: HTMLElement | null = null;
 	private currentAssistantText = "";
@@ -162,7 +243,11 @@ export class ClaudeChatView extends ItemView {
 			cls: "claude-chat-status-badge claude-status-idle",
 			text: "Idle",
 		});
-		this.buildModelSelect(header);
+		const historyBtn = header.createEl("button", {
+			text: "History",
+			cls: "claude-chat-history-btn",
+		});
+		historyBtn.addEventListener("click", () => this.deps?.openHistory?.());
 		const newBtn = header.createEl("button", {
 			text: "New chat",
 			cls: "claude-chat-new-btn",
@@ -199,6 +284,15 @@ export class ClaudeChatView extends ItemView {
 		});
 		this.sendBtn.addEventListener("click", () => void this.handleSend());
 
+		// Session controls live under the input box, out of the header's way;
+		// the context gauge sits at the far right of the same row.
+		const settingsBar = container.createDiv({ cls: "claude-chat-settings-bar" });
+		this.buildModelSelect(settingsBar);
+		this.buildEffortSelect(settingsBar);
+		this.buildPermissionSelect(settingsBar);
+		this.contextRingEl = settingsBar.createDiv({ cls: "claude-context-ring" });
+		this.updateContextRing(0);
+
 		this.unsubscribeActiveNote =
 			this.deps?.onActiveNoteChange?.(() => this.refreshContextBar()) ?? null;
 		this.refreshContextBar();
@@ -221,7 +315,10 @@ export class ClaudeChatView extends ItemView {
 		this.sendBtn = null;
 		this.stopBtn = null;
 		this.statusEl = null;
+		this.contextRingEl = null;
 		this.modelSelect = null;
+		this.effortSelect = null;
+		this.permissionSelect = null;
 		this.contextBarEl = null;
 		this.currentAssistantEl = null;
 		this.currentAssistantText = "";
@@ -240,11 +337,20 @@ export class ClaudeChatView extends ItemView {
 			return null;
 		}
 
+		// A prompt launch pins its merged settings for the whole conversation;
+		// the dropdown selections override model/effort/permission on top of
+		// that (or of the global settings) without changing what's saved.
+		const base = this.launchSettings ?? this.deps.getSettings();
 		const config: ChatSessionConfig = {
 			vaultPath,
-			// The dropdown selection overrides the global Model override for this
-			// conversation only; it never changes the saved settings.
-			settings: { ...this.deps.getSettings(), modelOverride: this.selectedModel },
+			settings: {
+				...base,
+				modelOverride: this.selectedModel,
+				effort: this.selectedEffort,
+				permissionMode: this.selectedPermissionMode,
+			},
+			extraSystemPrompt: this.launchExtraSystemPrompt,
+			resumeSessionId: this.resumeSessionId ?? undefined,
 			requestPermission: this.requestPermission,
 			callbacks: {
 				onSystemInit: (info) => this.onSystemInit(info),
@@ -256,6 +362,7 @@ export class ClaudeChatView extends ItemView {
 				onTurnStart: () => this.onTurnStart(),
 				onTurnEnd: () => this.onTurnEnd(),
 				onUsage: (tokens) => this.workingIndicator?.setTokens(tokens),
+				onContextSize: (tokens) => this.updateContextRing(tokens),
 			},
 		};
 
@@ -299,6 +406,8 @@ export class ClaudeChatView extends ItemView {
 
 		this.inputEl.value = "";
 
+		this.beginHistory(text.length > 40 ? text.slice(0, 40) + "…" : text);
+
 		const contextPaths = this.currentContextPaths();
 		const message = composeMessage(buildContextPreamble(contextPaths), text);
 		this.addUserMessage(text, contextPaths);
@@ -311,6 +420,105 @@ export class ClaudeChatView extends ItemView {
 			this.addError(err instanceof Error ? err.message : String(err));
 			this.setStatus("error", "Error");
 		}
+	}
+
+	/**
+	 * Start a fresh conversation from a PROMPT-*.md file: the merged
+	 * frontmatter-over-defaults settings become the session settings (synced
+	 * into the header dropdowns) and the prompt body is auto-submitted as the
+	 * first message. The conversation then continues interactively.
+	 */
+	async startPromptChat(launch: PromptChatLaunch): Promise<void> {
+		if (!this.deps) return;
+
+		await this.handleNewChat();
+
+		this.launchSettings = launch.settings;
+		this.launchExtraSystemPrompt = launch.extraSystemPrompt;
+		this.selectedModel = launch.settings.modelOverride;
+		this.selectedEffort = launch.settings.effort;
+		this.selectedPermissionMode = launch.settings.permissionMode;
+		this.syncSelectors();
+
+		this.beginHistory(launch.promptName);
+
+		if (!this.deps.lock.tryAcquire(LOCK_LABEL)) {
+			new Notice(`Claude is busy: ${this.deps.lock.label ?? "another run"}.`);
+			return;
+		}
+
+		const session = this.ensureSession();
+		if (!session) {
+			this.deps.lock.release();
+			return;
+		}
+
+		this.addUserMessage(launch.message);
+
+		try {
+			await session.start();
+			session.send(launch.message);
+		} catch (err) {
+			this.deps.lock.release();
+			this.addError(err instanceof Error ? err.message : String(err));
+			this.setStatus("error", "Error");
+		}
+	}
+
+	/**
+	 * Prepare the view to continue a past conversation from history. The prior
+	 * output is shown as context and the SDK session is resumed (options.resume)
+	 * when the user sends their next message. Further turns keep updating the
+	 * same history entry.
+	 */
+	async resumeFromHistory(entry: RunHistoryEntry): Promise<void> {
+		if (!entry.sessionId) {
+			new Notice("This history entry has no resumable session.");
+			return;
+		}
+
+		await this.handleNewChat();
+
+		this.resumeSessionId = entry.sessionId;
+		this.sessionId = entry.sessionId;
+		this.historyId = entry.id;
+		this.historyName = entry.promptName;
+		this.historyTimestamp = entry.timestamp;
+		this.historyOutput = entry.output;
+		this.historyDurationMs = entry.durationMs;
+		this.historyCostUsd = entry.costUsd;
+		this.historyTokens = entry.tokens;
+		// Restore the context gauge to where the conversation left off.
+		this.contextMaxTokens = entry.contextWindow ?? 0;
+		this.updateContextRing(entry.contextTokens ?? 0);
+
+		if (this.transcriptEl) {
+			this.transcriptEl.createDiv({
+				cls: "claude-chat-resume-marker",
+				text: `Resumed "${entry.promptName}" (${formatTimestamp(entry.timestamp)}) — Claude retains the full conversation.`,
+			});
+			if (entry.output) {
+				const el = this.transcriptEl.createDiv({
+					cls: "claude-chat-msg claude-chat-msg-assistant",
+				});
+				void MarkdownRenderer.render(this.app, entry.output, el, "/", this).then(
+					() => {
+						labelCodeBlocks(el);
+						this.scrollToBottom();
+					}
+				);
+			}
+		}
+		this.scrollToBottom();
+		this.inputEl?.focus();
+	}
+
+	/** Initialize this session's history identity on its first user message. */
+	private beginHistory(name: string): void {
+		if (this.historyId) return;
+		this.historyId = generateEntryId();
+		this.historyName = name;
+		this.historyTimestamp = Date.now();
 	}
 
 	private buildModelSelect(header: HTMLElement): void {
@@ -333,6 +541,43 @@ export class ClaudeChatView extends ItemView {
 		this.modelSelect = select;
 	}
 
+	private buildEffortSelect(header: HTMLElement): void {
+		this.selectedEffort = this.deps?.getSettings().effort ?? "";
+
+		const wrap = header.createDiv({ cls: "claude-chat-model" });
+		wrap.createSpan({ cls: "claude-chat-model-label", text: "Effort" });
+		const select = wrap.createEl("select", {
+			cls: "dropdown claude-chat-model-select",
+		});
+		select.setAttr("aria-label", "Reasoning effort for this conversation");
+		for (const [value, label] of Object.entries(EFFORT_LABELS)) {
+			const optionEl = select.createEl("option", { text: label });
+			optionEl.value = value;
+			if (value === this.selectedEffort) optionEl.selected = true;
+		}
+		select.addEventListener("change", () => this.handleEffortChange());
+		this.effortSelect = select;
+	}
+
+	private buildPermissionSelect(header: HTMLElement): void {
+		this.selectedPermissionMode =
+			this.deps?.getSettings().permissionMode ?? "default";
+
+		const wrap = header.createDiv({ cls: "claude-chat-model" });
+		wrap.createSpan({ cls: "claude-chat-model-label", text: "Permissions" });
+		const select = wrap.createEl("select", {
+			cls: "dropdown claude-chat-model-select",
+		});
+		select.setAttr("aria-label", "Permission mode for this conversation");
+		for (const [value, label] of Object.entries(PERMISSION_MODE_LABELS)) {
+			const optionEl = select.createEl("option", { text: label });
+			optionEl.value = value;
+			if (value === this.selectedPermissionMode) optionEl.selected = true;
+		}
+		select.addEventListener("change", () => this.handlePermissionChange());
+		this.permissionSelect = select;
+	}
+
 	private handleModelChange(): void {
 		if (!this.modelSelect) return;
 		this.selectedModel = this.modelSelect.value;
@@ -340,6 +585,48 @@ export class ClaudeChatView extends ItemView {
 		// when the next session starts.
 		if (this.session) {
 			void this.session.setModel(this.selectedModel || undefined);
+		}
+	}
+
+	private handleEffortChange(): void {
+		if (!this.effortSelect) return;
+		const value = this.effortSelect.value;
+		if (!isEffortSetting(value)) return;
+		this.selectedEffort = value;
+		// The SDK has no live effort switch; the subprocess is started with a
+		// fixed effort, so a mid-conversation change only affects the next chat.
+		if (this.session) {
+			new Notice("Effort applies when the next chat session starts.");
+		}
+	}
+
+	private handlePermissionChange(): void {
+		if (!this.permissionSelect) return;
+		const value = this.permissionSelect.value;
+		if (!isPermissionMode(value)) return;
+		this.selectedPermissionMode = value;
+		// Apply live if a conversation is already running; otherwise it is used
+		// when the next session starts.
+		if (this.session) {
+			void this.session.setPermissionMode(value);
+		}
+	}
+
+	/** Push the selected model/effort/permission values into the dropdowns. */
+	private syncSelectors(): void {
+		if (this.modelSelect) {
+			this.modelSelect.empty();
+			for (const opt of buildModelOptions(this.selectedModel)) {
+				const optionEl = this.modelSelect.createEl("option", {
+					text: opt.label,
+				});
+				optionEl.value = opt.value;
+				if (opt.value === this.selectedModel) optionEl.selected = true;
+			}
+		}
+		if (this.effortSelect) this.effortSelect.value = this.selectedEffort;
+		if (this.permissionSelect) {
+			this.permissionSelect.value = this.selectedPermissionMode;
 		}
 	}
 
@@ -360,6 +647,25 @@ export class ClaudeChatView extends ItemView {
 		this.currentAssistantText = "";
 		this.toolCallEls.clear();
 		this.setStatus("idle", "Idle");
+
+		// Drop per-conversation state: prompt-launch settings, resume target,
+		// and the history identity so the next conversation gets its own entry.
+		this.launchSettings = null;
+		this.launchExtraSystemPrompt = undefined;
+		this.resumeSessionId = null;
+		this.sessionId = null;
+		this.refresher.clear();
+		this.contextMaxTokens = 0;
+		this.updateContextRing(0);
+		this.historyId = null;
+		this.historyName = null;
+		this.historyTimestamp = 0;
+		this.historyOutput = "";
+		this.historyDurationMs = 0;
+		this.historyCostUsd = undefined;
+		this.historyTokens = undefined;
+		this.historyStatus = "success";
+		this.completedTurns = 0;
 	}
 
 	// --- context bar -------------------------------------------------------
@@ -412,13 +718,22 @@ export class ClaudeChatView extends ItemView {
 
 	// --- session callbacks -------------------------------------------------
 
-	private onSystemInit(info: { model?: string; tools?: string[] }): void {
+	private onSystemInit(info: {
+		model?: string;
+		tools?: string[];
+		sessionId?: string;
+	}): void {
+		if (info.sessionId) {
+			this.sessionId = info.sessionId;
+		}
 		if (info.model) {
 			this.setStatus("running", `Running - ${info.model}`);
 		}
 	}
 
 	private onTurnStart(): void {
+		this.turnStartedAt = Date.now();
+		this.lastTurnDurationMs = undefined;
 		this.setStatus("running", "Running");
 		this.stopBtn?.show();
 		this.setInputEnabled(false);
@@ -434,7 +749,98 @@ export class ClaudeChatView extends ItemView {
 		if (this.deps && this.deps.lock.label === LOCK_LABEL) {
 			this.deps.lock.release();
 		}
+
+		this.completedTurns += 1;
+		this.historyDurationMs +=
+			this.lastTurnDurationMs ?? Date.now() - this.turnStartedAt;
+		this.recordHistory();
+
+		// Replace the mid-turn estimate with the CLI's exact context usage.
+		void this.refreshContextUsage();
+
+		// A prompt-launched run notifies once, when its auto-submitted first
+		// turn settles (mirrors the old one-off runner's completion Notice).
+		if (this.launchSettings && this.completedTurns === 1) {
+			const durationSec = (this.historyDurationMs / 1000).toFixed(1);
+			const label =
+				this.historyStatus === "success"
+					? "complete"
+					: this.historyStatus === "limit"
+						? "limit reached"
+						: this.historyStatus;
+			this.deps?.notifyRunComplete?.(
+				this.historyName ?? "Prompt",
+				label,
+				durationSec
+			);
+		}
+
+		// Let Obsidian pick up any files Claude modified during the turn.
+		if (this.refresher.getModifiedPaths().size > 0) {
+			this.refresher.refreshModifiedFiles(this.app).catch((err) => {
+				console.error("Failed to refresh vault files:", err);
+			});
+			this.refresher.clear();
+		}
+
 		this.inputEl?.focus();
+	}
+
+	/**
+	 * Redraw the context gauge for the given occupancy. Until the exact window
+	 * size is known from getContextUsage, a common 200k default keeps the ring
+	 * roughly honest.
+	 */
+	private updateContextRing(usedTokens: number): void {
+		this.contextUsedTokens = usedTokens;
+		const el = this.contextRingEl;
+		if (!el) return;
+		const max =
+			this.contextMaxTokens > 0 ? this.contextMaxTokens : DEFAULT_CONTEXT_WINDOW;
+		const pct = Math.max(0, Math.min(100, (usedTokens / max) * 100));
+		if (el.style) el.style.setProperty("--ctx-pct", String(pct));
+		if (pct >= 80) {
+			el.addClass("claude-context-ring-warn");
+		} else {
+			el.removeClass("claude-context-ring-warn");
+		}
+		const label = `Context: ${Math.round(pct)}% (${formatTokens(usedTokens)} / ${formatTokens(max)} tokens)`;
+		el.setAttr("aria-label", label);
+		el.setAttr("title", label);
+	}
+
+	/** Fetch the CLI's exact context usage and sync the gauge to it. */
+	private async refreshContextUsage(): Promise<void> {
+		const session = this.session;
+		if (!session || typeof session.getContextUsage !== "function") return;
+		const usage = await session.getContextUsage();
+		if (!usage) return;
+		this.contextMaxTokens = usage.maxTokens;
+		this.updateContextRing(usage.usedTokens);
+		// The turn's history entry was recorded before this exact count came
+		// back; upsert again so the persisted context usage matches.
+		this.recordHistory();
+	}
+
+	/** Upsert this conversation's history entry via the plugin. */
+	private recordHistory(): void {
+		if (!this.historyId || !this.deps?.saveHistoryEntry) return;
+		const entry: RunHistoryEntry = {
+			id: this.historyId,
+			promptName: this.historyName ?? "Chat",
+			timestamp: this.historyTimestamp,
+			durationMs: this.historyDurationMs,
+			status: this.historyStatus,
+			output: this.historyOutput,
+		};
+		if (this.historyCostUsd !== undefined) entry.costUsd = this.historyCostUsd;
+		if (this.historyTokens !== undefined) entry.tokens = this.historyTokens;
+		const sessionId =
+			this.session?.sessionId ?? this.sessionId ?? this.resumeSessionId;
+		if (sessionId) entry.sessionId = sessionId;
+		if (this.contextUsedTokens > 0) entry.contextTokens = this.contextUsedTokens;
+		if (this.contextMaxTokens > 0) entry.contextWindow = this.contextMaxTokens;
+		this.deps.saveHistoryEntry(entry);
 	}
 
 	/** Show the inline "Claude is working" indicator at the transcript bottom. */
@@ -488,6 +894,7 @@ export class ClaudeChatView extends ItemView {
 			this.currentAssistantText = "";
 		}
 		this.currentAssistantText += text;
+		this.historyOutput += text.endsWith("\n") ? text : `${text}\n\n`;
 		this.renderAssistantMarkdown();
 		this.scrollToBottom();
 	}
@@ -520,6 +927,7 @@ export class ClaudeChatView extends ItemView {
 		input?: Record<string, unknown>;
 	}): void {
 		if (!this.transcriptEl) return;
+		this.refresher.trackToolUse(tool.name, tool.filePath);
 		this.finalizeAssistant();
 		const els = renderToolCall(this.transcriptEl, {
 			toolName: tool.name,
@@ -547,7 +955,27 @@ export class ClaudeChatView extends ItemView {
 		durationMs?: number;
 		tokens?: number;
 		isError: boolean;
+		subtype?: string;
 	}): void {
+		// Accumulate per-turn cost/tokens into the session's history entry.
+		if (result.costUsd !== undefined) {
+			this.historyCostUsd = (this.historyCostUsd ?? 0) + result.costUsd;
+		}
+		if (result.tokens !== undefined) {
+			this.historyTokens = (this.historyTokens ?? 0) + result.tokens;
+		}
+		this.lastTurnDurationMs = result.durationMs;
+		if (result.subtype === "success") {
+			this.historyStatus = "success";
+		} else if (
+			result.subtype === "error_max_turns" ||
+			result.subtype === "error_max_budget_usd"
+		) {
+			this.historyStatus = "limit";
+		} else {
+			this.historyStatus = "error";
+		}
+
 		if (!this.transcriptEl) return;
 		const text = formatResultMeta(result);
 		if (text) {
@@ -621,9 +1049,11 @@ export class ClaudeChatView extends ItemView {
 	private setInputEnabled(enabled: boolean): void {
 		if (this.inputEl) this.inputEl.disabled = !enabled;
 		if (this.sendBtn) this.sendBtn.disabled = !enabled;
-		// Lock the model picker mid-turn so the model can't change under an
-		// in-flight request.
+		// Lock the model and effort pickers mid-turn so they can't change under
+		// an in-flight request. The permission mode stays enabled: it switches
+		// live via setPermissionMode, which is most useful mid-turn.
 		if (this.modelSelect) this.modelSelect.disabled = !enabled;
+		if (this.effortSelect) this.effortSelect.disabled = !enabled;
 	}
 
 	private scrollToBottom(): void {

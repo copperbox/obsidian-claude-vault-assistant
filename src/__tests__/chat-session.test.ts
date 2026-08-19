@@ -29,8 +29,17 @@ function makeFakeQuery() {
 		}
 	};
 
+	const setPermissionModeSpy = vi.fn(async () => {});
+	const getContextUsageSpy = vi.fn(async () => ({
+		totalTokens: 50_000,
+		maxTokens: 200_000,
+		percentage: 25,
+	}));
+
 	const query = {
 		interrupt: interruptSpy,
+		setPermissionMode: setPermissionModeSpy,
+		getContextUsage: getContextUsageSpy,
 		[Symbol.asyncIterator]() {
 			return {
 				next: (): Promise<IteratorResult<unknown>> => {
@@ -43,7 +52,14 @@ function makeFakeQuery() {
 		},
 	};
 
-	return { query, emit, close, interruptSpy };
+	return {
+		query,
+		emit,
+		close,
+		interruptSpy,
+		setPermissionModeSpy,
+		getContextUsageSpy,
+	};
 }
 
 function makeCallbacks(): ChatCallbacks & {
@@ -59,6 +75,7 @@ function makeCallbacks(): ChatCallbacks & {
 		onTurnStart: vi.fn(),
 		onTurnEnd: vi.fn(),
 		onUsage: vi.fn(),
+		onContextSize: vi.fn(),
 	} as never;
 }
 
@@ -123,6 +140,45 @@ describe("buildChatOptions", () => {
 		expect(opts.maxTurns).toBeUndefined();
 		expect(opts.model).toBeUndefined();
 		expect(opts.extraArgs).toBeUndefined();
+	});
+
+	it("uses the configured permission mode", () => {
+		const opts = buildChatOptions({
+			vaultPath: "/vault",
+			settings: { ...DEFAULT_SETTINGS, permissionMode: "acceptEdits" },
+			env,
+			canUseTool: async () => ({ behavior: "allow" }),
+		});
+		expect(opts.permissionMode).toBe("acceptEdits");
+	});
+
+	it("includes effort when configured and omits it by default", () => {
+		const withEffort = buildChatOptions({
+			vaultPath: "/vault",
+			settings: { ...DEFAULT_SETTINGS, effort: "xhigh" },
+			env,
+			canUseTool: async () => ({ behavior: "allow" }),
+		});
+		expect(withEffort.effort).toBe("xhigh");
+
+		const without = buildChatOptions({
+			vaultPath: "/vault",
+			settings: { ...DEFAULT_SETTINGS },
+			env,
+			canUseTool: async () => ({ behavior: "allow" }),
+		});
+		expect(without.effort).toBeUndefined();
+	});
+
+	it("passes a resume session id through to options.resume", () => {
+		const opts = buildChatOptions({
+			vaultPath: "/vault",
+			settings: { ...DEFAULT_SETTINGS },
+			env,
+			canUseTool: async () => ({ behavior: "allow" }),
+			resumeSessionId: "abc-123",
+		});
+		expect(opts.resume).toBe("abc-123");
 	});
 
 	it("appends an extra system prompt after the wiki-link prompt", () => {
@@ -395,6 +451,84 @@ describe("ChatSession", () => {
 		const r = await canUseTool("Bash", { command: "rm" }, { toolUseID: "x" });
 		expect(r.behavior).toBe("deny");
 		expect(r.message).toBeTruthy();
+	});
+
+	it("forwards the init session id to onSystemInit", async () => {
+		const session = makeSession();
+		await session.start();
+
+		fake.emit({
+			type: "system",
+			subtype: "init",
+			model: "claude-fable-5",
+			session_id: "sess-42",
+		});
+		await flush();
+
+		expect(callbacks.onSystemInit).toHaveBeenCalledWith(
+			expect.objectContaining({ model: "claude-fable-5", sessionId: "sess-42" })
+		);
+	});
+
+	it("emits context occupancy from each assistant message", async () => {
+		const session = makeSession();
+		await session.start();
+		session.send("hi");
+
+		fake.emit({
+			type: "assistant",
+			message: {
+				content: [{ type: "text", text: "a" }],
+				usage: { input_tokens: 5, cache_read_input_tokens: 30_000, output_tokens: 20 },
+			},
+		});
+		await flush();
+
+		expect(callbacks.onContextSize).toHaveBeenLastCalledWith(30_025);
+	});
+
+	it("getContextUsage returns the CLI's usage and null before start", async () => {
+		const unstarted = makeSession();
+		expect(await unstarted.getContextUsage()).toBeNull();
+
+		const session = makeSession();
+		await session.start();
+		expect(await session.getContextUsage()).toEqual({
+			usedTokens: 50_000,
+			maxTokens: 200_000,
+		});
+		expect(fake.getContextUsageSpy).toHaveBeenCalledOnce();
+	});
+
+	it("tracks the session id from any message, not just init", async () => {
+		const session = makeSession();
+		await session.start();
+		expect(session.sessionId).toBeNull();
+
+		// No init message: the id must still be picked up from other messages.
+		fake.emit({
+			type: "assistant",
+			session_id: "sess-77",
+			message: { content: [{ type: "text", text: "hi" }] },
+		});
+		await flush();
+
+		expect(session.sessionId).toBe("sess-77");
+	});
+
+	it("setPermissionMode forwards to the SDK query", async () => {
+		const session = makeSession();
+		await session.start();
+
+		await session.setPermissionMode("acceptEdits");
+		expect(fake.setPermissionModeSpy).toHaveBeenCalledWith("acceptEdits");
+	});
+
+	it("setPermissionMode is a no-op before start", async () => {
+		const session = makeSession();
+		await session.setPermissionMode("plan");
+		// No query yet: nothing to assert beyond "does not throw".
+		expect(callbacks.onError).not.toHaveBeenCalled();
 	});
 
 	it("interrupt calls the SDK interrupt and ends the turn", async () => {
