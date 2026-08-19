@@ -466,8 +466,9 @@
 	color: var(--text-muted);
 }
 
+/* Signal destructiveness with the red border/text only: a filled error
+   background renders the label unreadable in some themes. */
 .claude-history-clear-btn:hover {
-	background-color: var(--background-modifier-error);
 	color: var(--text-error);
 	border-color: var(--text-error);
 }
@@ -602,7 +603,6 @@
 .claude-chat-header {
 	display: flex;
 	align-items: center;
-	/* Three dropdowns plus buttons overflow a narrow sidebar; let them wrap. */
 	flex-wrap: wrap;
 	gap: 8px;
 	padding: 4px 12px;
@@ -641,6 +641,12 @@
 	opacity: 0.6;
 }
 
+/* Group the action buttons on the right, away from the status badge. */
+.claude-chat-history-btn {
+	margin-left: auto;
+}
+
+.claude-chat-history-btn,
 .claude-chat-new-btn,
 .claude-chat-stop-btn {
 	font-size: var(--font-smallest);
@@ -872,6 +878,16 @@
 	border-top: 1px solid var(--background-modifier-border);
 	flex-shrink: 0;
 	align-items: flex-end;
+}
+
+/* Session controls (model / effort / permissions) under the input box. */
+.claude-chat-settings-bar {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 8px;
+	padding: 4px 12px 8px;
+	flex-shrink: 0;
 }
 
 .claude-chat-input {

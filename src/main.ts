@@ -316,6 +316,9 @@ export default class ClaudeVaultAssistant extends Plugin {
 				return () => this.app.workspace.offref(ref);
 			},
 			saveHistoryEntry: (entry) => this.saveHistoryEntry(entry),
+			openHistory: () => {
+				void this.activateHistoryView();
+			},
 			notifyRunComplete: (name, status, durationSec) =>
 				this.notifyRunComplete(name, status, durationSec),
 		};

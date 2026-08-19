@@ -124,6 +124,8 @@ export interface ChatViewDeps {
 	 * session. Called after every completed turn. Optional.
 	 */
 	saveHistoryEntry?: (entry: RunHistoryEntry) => void;
+	/** Reveal the history pane (the header History button). Optional. */
+	openHistory?: () => void;
 	/**
 	 * Notify the user that a prompt-launched run finished its first turn
 	 * (Notice + system notification when unfocused). Optional.
@@ -236,9 +238,11 @@ export class ClaudeChatView extends ItemView {
 			cls: "claude-chat-status-badge claude-status-idle",
 			text: "Idle",
 		});
-		this.buildModelSelect(header);
-		this.buildEffortSelect(header);
-		this.buildPermissionSelect(header);
+		const historyBtn = header.createEl("button", {
+			text: "History",
+			cls: "claude-chat-history-btn",
+		});
+		historyBtn.addEventListener("click", () => this.deps?.openHistory?.());
 		const newBtn = header.createEl("button", {
 			text: "New chat",
 			cls: "claude-chat-new-btn",
@@ -274,6 +278,12 @@ export class ClaudeChatView extends ItemView {
 			cls: "claude-chat-send-btn",
 		});
 		this.sendBtn.addEventListener("click", () => void this.handleSend());
+
+		// Session controls live under the input box, out of the header's way.
+		const settingsBar = container.createDiv({ cls: "claude-chat-settings-bar" });
+		this.buildModelSelect(settingsBar);
+		this.buildEffortSelect(settingsBar);
+		this.buildPermissionSelect(settingsBar);
 
 		this.unsubscribeActiveNote =
 			this.deps?.onActiveNoteChange?.(() => this.refreshContextBar()) ?? null;
@@ -779,7 +789,8 @@ export class ClaudeChatView extends ItemView {
 		if (this.historyCostUsd !== undefined) entry.costUsd = this.historyCostUsd;
 		if (this.historyTokens !== undefined) entry.tokens = this.historyTokens;
 		if (this.historyNotePath) entry.notePath = this.historyNotePath;
-		const sessionId = this.sessionId ?? this.resumeSessionId;
+		const sessionId =
+			this.session?.sessionId ?? this.sessionId ?? this.resumeSessionId;
 		if (sessionId) entry.sessionId = sessionId;
 		this.deps.saveHistoryEntry(entry);
 	}

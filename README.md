@@ -102,7 +102,7 @@ There are three ways to run a prompt:
 2. **Command palette** — Use `Run Claude Prompt (Vault)` to run against the entire vault
 3. **Command palette** — Use `Run Claude Prompt (Active Note)` to run scoped to the currently open note
 
-Running a prompt opens the **chat view** and starts a fresh conversation: the prompt file's frontmatter overrides (model, effort, permission mode, tools, limits) become the session settings — reflected in the chat header dropdowns — and the prompt body is submitted automatically as the first message. When that first turn finishes you can keep talking: ask follow-ups, refine the result, or steer Claude, all with the prompt's settings still in effect.
+Running a prompt opens the **chat view** and starts a fresh conversation: the prompt file's frontmatter overrides (model, effort, permission mode, tools, limits) become the session settings — reflected in the dropdowns below the input box — and the prompt body is submitted automatically as the first message. When that first turn finishes you can keep talking: ask follow-ups, refine the result, or steer Claude, all with the prompt's settings still in effect.
 
 Tool calls (file reads, edits, etc.) appear inline as collapsible sections, each with a status badge (✓ success, ✗ error) once the result returns. While a turn is active, an animated "Claude is working" indicator sits at the bottom of the transcript with a live counter of elapsed time and tokens generated so far; when it finishes, a one-line breakdown shows the cost, elapsed time, and total tokens used (e.g. `$0.0123 - 4.5s - 12,345 tokens`).
 
@@ -131,11 +131,11 @@ Type a message and press **Enter** to send (**Shift+Enter** for a newline). Clau
 
 These approvals never modify your saved `Allowed tools` whitelist. One-off prompts have the same approval flow, scoped to a single run.
 
-**Choosing the model.** The chat header has a model dropdown showing the model that will be used for the next message. It defaults to your `Model override` setting (or "Default (CLI)" when that's empty, letting the CLI choose). Pick a different model (Opus, Sonnet, Haiku, or a custom value from your settings) to switch -- it applies live to the running conversation and is remembered for this chat only; it never changes your saved settings. The dropdown is locked while a turn is in progress.
+**Choosing the model.** A settings bar below the message box has a model dropdown showing the model that will be used for the next message. It defaults to your `Model override` setting (or "Default (CLI)" when that's empty, letting the CLI choose). Pick a different model (Opus, Sonnet, Haiku, or a custom value from your settings) to switch -- it applies live to the running conversation and is remembered for this chat only; it never changes your saved settings. The dropdown is locked while a turn is in progress.
 
-**Choosing the effort.** An effort dropdown sets how much reasoning Claude applies (Default / Low / Medium / High / xHigh / Max), initialized from the `Effort` setting. Because the underlying session process starts with a fixed effort, a change applies when the *next* session starts (use **New chat**); levels a model doesn't support fall back automatically.
+**Choosing the effort.** Next to it, an effort dropdown sets how much reasoning Claude applies (Default / Low / Medium / High / xHigh / Max), initialized from the `Effort` setting. Because the underlying session process starts with a fixed effort, a change applies when the *next* session starts (use **New chat**); levels a model doesn't support fall back automatically.
 
-**Choosing the permission mode.** A permissions dropdown controls how tool use is approved, initialized from the `Permission mode` setting:
+**Choosing the permission mode.** The bar's permissions dropdown controls how tool use is approved, initialized from the `Permission mode` setting:
 
 - **Prompt (default)** — anything not on the `Allowed tools` whitelist shows an approval card.
 - **Accept edits** — file edits are auto-approved; other non-whitelisted tools still prompt.
@@ -146,7 +146,7 @@ Unlike effort, the permission mode switches live: changing it mid-conversation (
 
 **Active-note context.** A context bar sits just above the message box showing the note you currently have open in Obsidian, with a checkbox that is on by default. While it's checked, each message you send is prefixed with a short line naming that note as a `[[wiki link]]` and telling Claude to read it if it's relevant -- so a chat instantly knows what you're looking at without you pasting anything. The reference is cheap (it costs no extra tokens up front; Claude reads the note itself only when it needs to), and it always reflects the note's current on-disk contents. The bar updates as you switch notes, and a small `Context: [[note]]` caption is recorded under each message that included one -- its wiki link is clickable, so you can reopen the referenced note when reviewing the history. Uncheck the box to send a message with no note attached. When no note is open, the bar shows "No note open" and nothing is attached.
 
-**Stopping and resetting.** Use **Stop** in the chat header to interrupt the current turn without ending the conversation. Use **New chat** to discard the conversation and start fresh.
+**Stopping and resetting.** Use **Stop** in the chat header to interrupt the current turn without ending the conversation. Use **New chat** to discard the conversation and start fresh, and **History** to jump to the session history pane.
 
 **One turn at a time.** Only one turn can be running at once, no matter how it was started. An idle, open chat holds no lock -- it is only held while a turn is actively running. The `Max turns` and `Max budget (USD)` settings apply per chat turn.
 
@@ -227,7 +227,7 @@ Configure the plugin in Obsidian Settings > Claude Vault Assistant:
 - **`src/frontmatter.ts`** — Parses YAML frontmatter overrides from prompt files
 - **`src/prompt-picker.ts`** — Modal for selecting a prompt to run
 - **`src/vault-refresher.ts`** — Refreshes modified files after each turn
-- **`src/chat-view.ts`** — Sidebar chat pane: transcript, input box, header dropdowns (model/effort/permissions), active-note context bar, permission cards, prompt launches, and history recording/resume
+- **`src/chat-view.ts`** — Sidebar chat pane: transcript, input box, session-control dropdowns (model/effort/permissions), active-note context bar, permission cards, prompt launches, and history recording/resume
 - **`src/chat-context.ts`** — Pure helpers that turn the active note into a reference-only context preamble ([[wiki links]]) prepended to a chat turn
 - **`src/permission-card.ts`** — Tool-approval card rendering shown in the chat transcript
 - **`src/permission-types.ts`** — Shared permission contract (decision and request types)

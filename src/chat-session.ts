@@ -231,6 +231,7 @@ export class ChatSession {
 	private readonly sessionAllowed = new Set<string>();
 
 	private query: Query | null = null;
+	private currentSessionId: string | null = null;
 	private started = false;
 	private disposed = false;
 	private turnActive = false;
@@ -380,8 +381,19 @@ export class ChatSession {
 		}
 	}
 
+	/**
+	 * The CLI session id for this conversation, once known. Every SDK message
+	 * carries session_id, so this is tracked from all of them (not just the
+	 * init message) — it's what makes a conversation resumable later.
+	 */
+	get sessionId(): string | null {
+		return this.currentSessionId;
+	}
+
 	private handleMessage(msg: SDKMessage): void {
 		const data = msg as unknown as Record<string, unknown>;
+		const sid = asString(data["session_id"]);
+		if (sid) this.currentSessionId = sid;
 		switch (msg.type) {
 			case "system":
 				if (data["subtype"] === "init") {

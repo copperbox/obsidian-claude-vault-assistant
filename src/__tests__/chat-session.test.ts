@@ -456,6 +456,22 @@ describe("ChatSession", () => {
 		);
 	});
 
+	it("tracks the session id from any message, not just init", async () => {
+		const session = makeSession();
+		await session.start();
+		expect(session.sessionId).toBeNull();
+
+		// No init message: the id must still be picked up from other messages.
+		fake.emit({
+			type: "assistant",
+			session_id: "sess-77",
+			message: { content: [{ type: "text", text: "hi" }] },
+		});
+		await flush();
+
+		expect(session.sessionId).toBe("sess-77");
+	});
+
 	it("setPermissionMode forwards to the SDK query", async () => {
 		const session = makeSession();
 		await session.start();
