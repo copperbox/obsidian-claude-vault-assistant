@@ -27,7 +27,7 @@ import {
 	renderToolCall,
 	renderToolResult,
 } from "./tool-render";
-import { formatResultMeta } from "./format";
+import { formatResultMeta, formatTokens } from "./format";
 import { labelCodeBlocks } from "./code-block";
 import { WorkingIndicator } from "./working-indicator";
 import {
@@ -152,6 +152,9 @@ export interface PromptChatLaunch {
 
 const LOCK_LABEL = "Interactive chat turn";
 
+/** Assumed context window until getContextUsage reports the real one. */
+const DEFAULT_CONTEXT_WINDOW = 200_000;
+
 export class ClaudeChatView extends ItemView {
 	private deps: ChatViewDeps | null = null;
 	private session: ChatSession | null = null;
@@ -181,6 +184,11 @@ export class ClaudeChatView extends ItemView {
 
 	/** Refreshes Obsidian's cache for files Claude modified during a turn. */
 	private refresher = new VaultRefresher();
+
+	/** Circular context-window gauge in the header. */
+	private contextRingEl: HTMLElement | null = null;
+	/** Context window size from getContextUsage; 0 until first known. */
+	private contextMaxTokens = 0;
 
 	// History bookkeeping: one entry per chat session, updated every turn.
 	private historyId: string | null = null;
@@ -238,6 +246,8 @@ export class ClaudeChatView extends ItemView {
 			cls: "claude-chat-status-badge claude-status-idle",
 			text: "Idle",
 		});
+		this.contextRingEl = header.createDiv({ cls: "claude-context-ring" });
+		this.updateContextRing(0);
 		const historyBtn = header.createEl("button", {
 			text: "History",
 			cls: "claude-chat-history-btn",
@@ -307,6 +317,7 @@ export class ClaudeChatView extends ItemView {
 		this.sendBtn = null;
 		this.stopBtn = null;
 		this.statusEl = null;
+		this.contextRingEl = null;
 		this.modelSelect = null;
 		this.effortSelect = null;
 		this.permissionSelect = null;
@@ -353,6 +364,7 @@ export class ClaudeChatView extends ItemView {
 				onTurnStart: () => this.onTurnStart(),
 				onTurnEnd: () => this.onTurnEnd(),
 				onUsage: (tokens) => this.workingIndicator?.setTokens(tokens),
+				onContextSize: (tokens) => this.updateContextRing(tokens),
 			},
 		};
 
@@ -646,6 +658,8 @@ export class ClaudeChatView extends ItemView {
 		this.resumeSessionId = null;
 		this.sessionId = null;
 		this.refresher.clear();
+		this.contextMaxTokens = 0;
+		this.updateContextRing(0);
 		this.historyId = null;
 		this.historyName = null;
 		this.historyScope = "vault";
@@ -746,6 +760,9 @@ export class ClaudeChatView extends ItemView {
 			this.lastTurnDurationMs ?? Date.now() - this.turnStartedAt;
 		this.recordHistory();
 
+		// Replace the mid-turn estimate with the CLI's exact context usage.
+		void this.refreshContextUsage();
+
 		// A prompt-launched run notifies once, when its auto-submitted first
 		// turn settles (mirrors the old one-off runner's completion Notice).
 		if (this.launchSettings && this.completedTurns === 1) {
@@ -772,6 +789,38 @@ export class ClaudeChatView extends ItemView {
 		}
 
 		this.inputEl?.focus();
+	}
+
+	/**
+	 * Redraw the context gauge for the given occupancy. Until the exact window
+	 * size is known from getContextUsage, a common 200k default keeps the ring
+	 * roughly honest.
+	 */
+	private updateContextRing(usedTokens: number): void {
+		const el = this.contextRingEl;
+		if (!el) return;
+		const max =
+			this.contextMaxTokens > 0 ? this.contextMaxTokens : DEFAULT_CONTEXT_WINDOW;
+		const pct = Math.max(0, Math.min(100, (usedTokens / max) * 100));
+		if (el.style) el.style.setProperty("--ctx-pct", String(pct));
+		if (pct >= 80) {
+			el.addClass("claude-context-ring-warn");
+		} else {
+			el.removeClass("claude-context-ring-warn");
+		}
+		const label = `Context: ${Math.round(pct)}% (${formatTokens(usedTokens)} / ${formatTokens(max)} tokens)`;
+		el.setAttr("aria-label", label);
+		el.setAttr("title", label);
+	}
+
+	/** Fetch the CLI's exact context usage and sync the gauge to it. */
+	private async refreshContextUsage(): Promise<void> {
+		const session = this.session;
+		if (!session || typeof session.getContextUsage !== "function") return;
+		const usage = await session.getContextUsage();
+		if (!usage) return;
+		this.contextMaxTokens = usage.maxTokens;
+		this.updateContextRing(usage.usedTokens);
 	}
 
 	/** Upsert this conversation's history entry via the plugin. */

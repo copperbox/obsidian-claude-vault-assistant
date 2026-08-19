@@ -641,6 +641,37 @@
 	opacity: 0.6;
 }
 
+/* Context-window gauge: a donut that fills clockwise with usage. The fill
+   fraction comes from the --ctx-pct custom property (0-100), set from JS. */
+.claude-context-ring {
+	--ctx-pct: 0;
+	width: 16px;
+	height: 16px;
+	flex-shrink: 0;
+	border-radius: 50%;
+	background: conic-gradient(
+		var(--interactive-accent) calc(var(--ctx-pct) * 1%),
+		var(--background-modifier-border) 0
+	);
+	-webkit-mask: radial-gradient(
+		farthest-side,
+		transparent calc(100% - 3.5px),
+		#000 calc(100% - 3px)
+	);
+	mask: radial-gradient(
+		farthest-side,
+		transparent calc(100% - 3.5px),
+		#000 calc(100% - 3px)
+	);
+}
+
+.claude-context-ring-warn {
+	background: conic-gradient(
+		var(--text-error) calc(var(--ctx-pct) * 1%),
+		var(--background-modifier-border) 0
+	);
+}
+
 /* Group the action buttons on the right, away from the status badge. */
 .claude-chat-history-btn {
 	margin-left: auto;

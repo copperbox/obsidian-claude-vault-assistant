@@ -30,10 +30,16 @@ function makeFakeQuery() {
 	};
 
 	const setPermissionModeSpy = vi.fn(async () => {});
+	const getContextUsageSpy = vi.fn(async () => ({
+		totalTokens: 50_000,
+		maxTokens: 200_000,
+		percentage: 25,
+	}));
 
 	const query = {
 		interrupt: interruptSpy,
 		setPermissionMode: setPermissionModeSpy,
+		getContextUsage: getContextUsageSpy,
 		[Symbol.asyncIterator]() {
 			return {
 				next: (): Promise<IteratorResult<unknown>> => {
@@ -46,7 +52,14 @@ function makeFakeQuery() {
 		},
 	};
 
-	return { query, emit, close, interruptSpy, setPermissionModeSpy };
+	return {
+		query,
+		emit,
+		close,
+		interruptSpy,
+		setPermissionModeSpy,
+		getContextUsageSpy,
+	};
 }
 
 function makeCallbacks(): ChatCallbacks & {
@@ -62,6 +75,7 @@ function makeCallbacks(): ChatCallbacks & {
 		onTurnStart: vi.fn(),
 		onTurnEnd: vi.fn(),
 		onUsage: vi.fn(),
+		onContextSize: vi.fn(),
 	} as never;
 }
 
@@ -454,6 +468,36 @@ describe("ChatSession", () => {
 		expect(callbacks.onSystemInit).toHaveBeenCalledWith(
 			expect.objectContaining({ model: "claude-fable-5", sessionId: "sess-42" })
 		);
+	});
+
+	it("emits context occupancy from each assistant message", async () => {
+		const session = makeSession();
+		await session.start();
+		session.send("hi");
+
+		fake.emit({
+			type: "assistant",
+			message: {
+				content: [{ type: "text", text: "a" }],
+				usage: { input_tokens: 5, cache_read_input_tokens: 30_000, output_tokens: 20 },
+			},
+		});
+		await flush();
+
+		expect(callbacks.onContextSize).toHaveBeenLastCalledWith(30_025);
+	});
+
+	it("getContextUsage returns the CLI's usage and null before start", async () => {
+		const unstarted = makeSession();
+		expect(await unstarted.getContextUsage()).toBeNull();
+
+		const session = makeSession();
+		await session.start();
+		expect(await session.getContextUsage()).toEqual({
+			usedTokens: 50_000,
+			maxTokens: 200_000,
+		});
+		expect(fake.getContextUsageSpy).toHaveBeenCalledOnce();
 	});
 
 	it("tracks the session id from any message, not just init", async () => {

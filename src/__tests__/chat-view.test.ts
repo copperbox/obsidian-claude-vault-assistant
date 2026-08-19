@@ -18,6 +18,10 @@ function makeFakeSession() {
 		dispose: vi.fn(async () => {}),
 		setModel: vi.fn(async () => {}),
 		setPermissionMode: vi.fn(async () => {}),
+		getContextUsage: vi.fn(async () => ({
+			usedTokens: 60_000,
+			maxTokens: 200_000,
+		})),
 		isTurnActive: false,
 		sessionAllowedTools: [],
 	};
@@ -355,6 +359,22 @@ describe("ClaudeChatView", () => {
 		expect(second.id).toBe(first.id);
 		expect(second.costUsd).toBeCloseTo(0.04);
 		expect(second.tokens).toBe(120);
+	});
+
+	it("syncs the context ring to the CLI's exact usage after a turn", async () => {
+		const { view, deps, fakeSession } = makeView();
+		(view as unknown as { inputEl: { value: string } }).inputEl.value = "hi";
+		await (view as unknown as { handleSend: () => Promise<void> }).handleSend();
+
+		const config = (deps.createSession as ReturnType<typeof vi.fn>).mock
+			.calls[0]![0] as { callbacks: { onTurnEnd: () => void } };
+		config.callbacks.onTurnEnd();
+		await new Promise((r) => setTimeout(r, 0));
+
+		expect(fakeSession.getContextUsage).toHaveBeenCalled();
+		expect(
+			(view as unknown as { contextMaxTokens: number }).contextMaxTokens
+		).toBe(200_000);
 	});
 
 	it("releases the lock and disposes the session on close", async () => {

@@ -16,7 +16,11 @@ import type {
 } from "./permission-types";
 import { resolveSpawnEnv } from "./env-resolver";
 import { patchElectronEventTarget } from "./electron-compat";
-import { sumUsageTokens, outputTokensFromUsage } from "./format";
+import {
+	sumUsageTokens,
+	outputTokensFromUsage,
+	contextTokensFromUsage,
+} from "./format";
 
 // Re-export the permission contract so existing importers of these types from
 // "./chat-session" keep working; the canonical home is "./permission-types".
@@ -64,6 +68,18 @@ export interface ChatCallbacks {
 	 * time an assistant message arrives. Drives the live working indicator.
 	 */
 	onUsage?: (tokens: number) => void;
+	/**
+	 * Approximate context-window occupancy (tokens) reported by the latest
+	 * assistant message. Drives the live context ring between the exact
+	 * getContextUsage() refreshes at turn boundaries.
+	 */
+	onContextSize?: (tokens: number) => void;
+}
+
+/** Current context-window occupancy, from the CLI's get_context_usage. */
+export interface ContextUsage {
+	usedTokens: number;
+	maxTokens: number;
 }
 
 export type QueryFn = (params: {
@@ -297,6 +313,27 @@ export class ChatSession {
 	}
 
 	/**
+	 * Exact context-window usage from the CLI, or null when the session hasn't
+	 * started or the control request isn't supported/fails.
+	 */
+	async getContextUsage(): Promise<ContextUsage | null> {
+		if (!this.query) return null;
+		try {
+			const usage = await this.query.getContextUsage();
+			if (
+				typeof usage?.totalTokens !== "number" ||
+				typeof usage?.maxTokens !== "number" ||
+				usage.maxTokens <= 0
+			) {
+				return null;
+			}
+			return { usedTokens: usage.totalTokens, maxTokens: usage.maxTokens };
+		} catch {
+			return null;
+		}
+	}
+
+	/**
 	 * Switch the permission mode for the live conversation. No-op if the session
 	 * hasn't started yet (the chosen mode is applied via options when it does).
 	 */
@@ -428,6 +465,13 @@ export class ChatSession {
 		if (stepTokens > 0) {
 			this.turnOutputTokens += stepTokens;
 			this.config.callbacks.onUsage?.(this.turnOutputTokens);
+		}
+
+		// Each message also reports the full context it was sent with; the
+		// latest value approximates current context-window occupancy.
+		const contextTokens = contextTokensFromUsage(message?.["usage"]);
+		if (contextTokens > 0) {
+			this.config.callbacks.onContextSize?.(contextTokens);
 		}
 
 		const content = message?.["content"];
