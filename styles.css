@@ -658,10 +658,6 @@
 	color: var(--text-muted);
 }
 
-.claude-chat-new-btn {
-	margin-left: auto;
-}
-
 .claude-chat-new-btn:hover {
 	background-color: var(--background-modifier-hover);
 	color: var(--text-normal);
