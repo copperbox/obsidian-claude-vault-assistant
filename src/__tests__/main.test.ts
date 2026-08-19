@@ -21,11 +21,13 @@ describe("ClaudeVaultAssistant command registration", () => {
 	let plugin: ClaudeVaultAssistant;
 	let registeredCommands: MockCommand[];
 	let registeredViewTypes: string[];
+	let viewFactories: Map<string, (leaf: unknown) => unknown>;
 	let ribbonIcons: { icon: string; title: string; callback: () => void }[];
 
 	beforeEach(async () => {
 		registeredCommands = [];
 		registeredViewTypes = [];
+		viewFactories = new Map();
 		ribbonIcons = [];
 
 		plugin = new ClaudeVaultAssistant({} as never, {} as never);
@@ -34,8 +36,9 @@ describe("ClaudeVaultAssistant command registration", () => {
 			return cmd as never;
 		}) as never;
 		plugin.addSettingTab = vi.fn();
-		plugin.registerView = vi.fn((type: string) => {
+		plugin.registerView = vi.fn((type: string, factory: (leaf: unknown) => unknown) => {
 			registeredViewTypes.push(type);
+			viewFactories.set(type, factory);
 		}) as never;
 		plugin.addRibbonIcon = vi.fn((icon: string, title: string, callback: () => void) => {
 			ribbonIcons.push({ icon, title, callback });
@@ -49,6 +52,18 @@ describe("ClaudeVaultAssistant command registration", () => {
 	it("registers the history and chat view types", () => {
 		expect(registeredViewTypes).toContain(VIEW_TYPE_CLAUDE_HISTORY);
 		expect(registeredViewTypes).toContain(VIEW_TYPE_CLAUDE_CHAT);
+	});
+
+	it("wires history callbacks at view construction, not only on activate", () => {
+		// A pane restored from a saved workspace layout is built by the factory
+		// alone; it must still receive entries and the resume action.
+		const factory = viewFactories.get(VIEW_TYPE_CLAUDE_HISTORY)!;
+		const view = factory({}) as unknown as {
+			onResume: unknown;
+			onClearHistory: unknown;
+		};
+		expect(view.onResume).toBeTruthy();
+		expect(view.onClearHistory).toBeTruthy();
 	});
 
 	it("registers the run-prompt and chat ribbon icons", () => {

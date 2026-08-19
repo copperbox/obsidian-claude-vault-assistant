@@ -145,9 +145,20 @@ export class ClaudeHistoryView extends ItemView {
 				cls: `claude-history-item-status claude-history-status-${entry.status}`,
 			});
 
-			item.addEventListener("click", () => {
-				this.showEntry(entry);
-			});
+			item.addEventListener("click", () => this.handleEntryClick(entry));
+		}
+	}
+
+	/**
+	 * A resumable conversation opens straight in the chat view, like switching
+	 * to another chat; only legacy entries (recorded before session ids
+	 * existed) fall back to the read-only replay.
+	 */
+	private handleEntryClick(entry: RunHistoryEntry): void {
+		if (entry.sessionId && this.onResume) {
+			this.onResume(entry);
+		} else {
+			this.showEntry(entry);
 		}
 	}
 

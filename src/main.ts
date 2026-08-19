@@ -33,10 +33,14 @@ export default class ClaudeVaultAssistant extends Plugin {
 		await this.loadSettings();
 		this.addSettingTab(new ClaudeVaultSettingTab(this.app, this));
 
-		this.registerView(
-			VIEW_TYPE_CLAUDE_HISTORY,
-			(leaf) => new ClaudeHistoryView(leaf)
-		);
+		this.registerView(VIEW_TYPE_CLAUDE_HISTORY, (leaf) => {
+			const view = new ClaudeHistoryView(leaf);
+			// Wire here, not just in activateHistoryView: a pane restored from a
+			// saved workspace layout never goes through activate, and without the
+			// callbacks it has no entries and no resume action.
+			this.wireHistoryCallbacks(view);
+			return view;
+		});
 
 		this.registerView(VIEW_TYPE_CLAUDE_CHAT, (leaf) => {
 			const view = new ClaudeChatView(leaf);

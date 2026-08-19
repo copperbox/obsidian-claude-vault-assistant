@@ -59,6 +59,29 @@ describe("ClaudeHistoryView", () => {
 			expect(resumeFn).not.toHaveBeenCalled();
 		});
 
+		it("opens a resumable entry directly in chat on click", () => {
+			const resumeFn = vi.fn();
+			view.setOnResume(resumeFn);
+			const entry = makeEntry({ sessionId: "sess-1" });
+
+			(view as unknown as {
+				handleEntryClick: (e: RunHistoryEntry) => void;
+			}).handleEntryClick(entry);
+
+			expect(resumeFn).toHaveBeenCalledWith(entry);
+		});
+
+		it("falls back to the read-only replay for entries without a session id", () => {
+			const resumeFn = vi.fn();
+			view.setOnResume(resumeFn);
+
+			(view as unknown as {
+				handleEntryClick: (e: RunHistoryEntry) => void;
+			}).handleEntryClick(makeEntry());
+
+			expect(resumeFn).not.toHaveBeenCalled();
+		});
+
 		it("renders an entry detail with and without a resumable session", () => {
 			view.setOnResume(vi.fn());
 			const show = (

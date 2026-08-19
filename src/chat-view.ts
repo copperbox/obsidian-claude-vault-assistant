@@ -10,7 +10,11 @@ import {
 } from "./settings";
 import type { ActivityLock } from "./activity-lock";
 import type { RunScope } from "./run-types";
-import { type RunHistoryEntry, generateEntryId } from "./run-history";
+import {
+	type RunHistoryEntry,
+	formatTimestamp,
+	generateEntryId,
+} from "./run-history";
 import { VaultRefresher } from "./vault-refresher";
 import { ChatSession, type ChatSessionConfig } from "./chat-session";
 import type { PermissionDecision, PermissionRequest } from "./permission-types";
@@ -472,7 +476,7 @@ export class ClaudeChatView extends ItemView {
 		if (this.transcriptEl) {
 			this.transcriptEl.createDiv({
 				cls: "claude-chat-resume-marker",
-				text: `Resumed "${entry.promptName}" — the model retains the full conversation.`,
+				text: `Resumed "${entry.promptName}" (${formatTimestamp(entry.timestamp)}) — Claude retains the full conversation.`,
 			});
 			if (entry.output) {
 				const el = this.transcriptEl.createDiv({
