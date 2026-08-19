@@ -533,14 +533,6 @@
 	font-size: var(--font-ui-small);
 }
 
-.claude-history-item-scope {
-	font-size: var(--font-smallest);
-	padding: 1px 6px;
-	border-radius: 3px;
-	background-color: var(--background-modifier-hover);
-	color: var(--text-muted);
-}
-
 .claude-history-item-status {
 	font-size: var(--font-smallest);
 	padding: 1px 6px;
@@ -576,10 +568,6 @@
 	gap: 8px;
 	font-size: var(--font-smallest);
 	color: var(--text-muted);
-}
-
-.claude-history-item-note {
-	font-style: italic;
 }
 
 .prompt-picker-overrides {
@@ -641,13 +629,9 @@
 	opacity: 0.6;
 }
 
-/* Column holding the context gauge with the Send button beneath it. */
-.claude-chat-send-col {
-	display: flex;
-	flex-direction: column;
-	/* Left-justified so the gauge hugs the chat box edge above Send. */
-	align-items: flex-start;
-	gap: 6px;
+/* The gauge sits at the far right of the settings bar, after the dropdowns. */
+.claude-chat-settings-bar .claude-context-ring {
+	margin-left: auto;
 }
 
 /* Context-window gauge: a donut that fills clockwise with usage. The fill

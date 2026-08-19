@@ -1,15 +1,11 @@
-import type { RunScope } from "./run-types";
-
 export interface RunHistoryEntry {
 	id: string;
 	promptName: string;
-	scope: RunScope;
 	timestamp: number;
 	durationMs: number;
 	status: "success" | "error" | "stopped" | "limit";
 	costUsd?: number;
 	tokens?: number;
-	notePath?: string;
 	output: string;
 	prompt?: string;
 	/** CLI session id; when present the conversation can be resumed in chat. */

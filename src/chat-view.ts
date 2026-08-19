@@ -9,7 +9,6 @@ import {
 	type PluginSettings,
 } from "./settings";
 import type { ActivityLock } from "./activity-lock";
-import type { RunScope } from "./run-types";
 import {
 	type RunHistoryEntry,
 	formatTimestamp,
@@ -140,12 +139,10 @@ export interface ChatViewDeps {
 /** Everything the chat view needs to launch a PROMPT-file-driven session. */
 export interface PromptChatLaunch {
 	promptName: string;
-	scope: RunScope;
 	/** Full first message, including any note-scope restriction prefix. */
 	message: string;
 	/** Merged settings: prompt frontmatter overrides over plugin defaults. */
 	settings: PluginSettings;
-	notePath?: string;
 	/** Extra system prompt text (e.g. vault CLAUDE.md). */
 	extraSystemPrompt?: string;
 }
@@ -185,7 +182,7 @@ export class ClaudeChatView extends ItemView {
 	/** Refreshes Obsidian's cache for files Claude modified during a turn. */
 	private refresher = new VaultRefresher();
 
-	/** Circular context-window gauge in the header. */
+	/** Circular context-window gauge at the right of the settings bar. */
 	private contextRingEl: HTMLElement | null = null;
 	/** Context window size from getContextUsage; 0 until first known. */
 	private contextMaxTokens = 0;
@@ -195,8 +192,6 @@ export class ClaudeChatView extends ItemView {
 	// History bookkeeping: one entry per chat session, updated every turn.
 	private historyId: string | null = null;
 	private historyName: string | null = null;
-	private historyScope: RunScope = "vault";
-	private historyNotePath: string | undefined;
 	private historyTimestamp = 0;
 	private historyOutput = "";
 	private historyDurationMs = 0;
@@ -283,21 +278,20 @@ export class ClaudeChatView extends ItemView {
 				void this.handleSend();
 			}
 		});
-		// Send sits in a small column with the context gauge directly above it.
-		const sendCol = inputRow.createDiv({ cls: "claude-chat-send-col" });
-		this.contextRingEl = sendCol.createDiv({ cls: "claude-context-ring" });
-		this.updateContextRing(0);
-		this.sendBtn = sendCol.createEl("button", {
+		this.sendBtn = inputRow.createEl("button", {
 			text: "Send",
 			cls: "claude-chat-send-btn",
 		});
 		this.sendBtn.addEventListener("click", () => void this.handleSend());
 
-		// Session controls live under the input box, out of the header's way.
+		// Session controls live under the input box, out of the header's way;
+		// the context gauge sits at the far right of the same row.
 		const settingsBar = container.createDiv({ cls: "claude-chat-settings-bar" });
 		this.buildModelSelect(settingsBar);
 		this.buildEffortSelect(settingsBar);
 		this.buildPermissionSelect(settingsBar);
+		this.contextRingEl = settingsBar.createDiv({ cls: "claude-context-ring" });
+		this.updateContextRing(0);
 
 		this.unsubscribeActiveNote =
 			this.deps?.onActiveNoteChange?.(() => this.refreshContextBar()) ?? null;
@@ -446,8 +440,6 @@ export class ClaudeChatView extends ItemView {
 		this.selectedPermissionMode = launch.settings.permissionMode;
 		this.syncSelectors();
 
-		this.historyScope = launch.scope;
-		this.historyNotePath = launch.notePath;
 		this.beginHistory(launch.promptName);
 
 		if (!this.deps.lock.tryAcquire(LOCK_LABEL)) {
@@ -491,8 +483,6 @@ export class ClaudeChatView extends ItemView {
 		this.sessionId = entry.sessionId;
 		this.historyId = entry.id;
 		this.historyName = entry.promptName;
-		this.historyScope = entry.scope;
-		this.historyNotePath = entry.notePath;
 		this.historyTimestamp = entry.timestamp;
 		this.historyOutput = entry.output;
 		this.historyDurationMs = entry.durationMs;
@@ -669,8 +659,6 @@ export class ClaudeChatView extends ItemView {
 		this.updateContextRing(0);
 		this.historyId = null;
 		this.historyName = null;
-		this.historyScope = "vault";
-		this.historyNotePath = undefined;
 		this.historyTimestamp = 0;
 		this.historyOutput = "";
 		this.historyDurationMs = 0;
@@ -840,7 +828,6 @@ export class ClaudeChatView extends ItemView {
 		const entry: RunHistoryEntry = {
 			id: this.historyId,
 			promptName: this.historyName ?? "Chat",
-			scope: this.historyScope,
 			timestamp: this.historyTimestamp,
 			durationMs: this.historyDurationMs,
 			status: this.historyStatus,
@@ -848,7 +835,6 @@ export class ClaudeChatView extends ItemView {
 		};
 		if (this.historyCostUsd !== undefined) entry.costUsd = this.historyCostUsd;
 		if (this.historyTokens !== undefined) entry.tokens = this.historyTokens;
-		if (this.historyNotePath) entry.notePath = this.historyNotePath;
 		const sessionId =
 			this.session?.sessionId ?? this.sessionId ?? this.resumeSessionId;
 		if (sessionId) entry.sessionId = sessionId;

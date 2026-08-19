@@ -129,10 +129,6 @@ export class ClaudeHistoryView extends ItemView {
 				text: entry.promptName,
 				cls: "claude-history-item-name",
 			});
-			header.createSpan({
-				text: entry.scope === "note" ? "Note" : "Vault",
-				cls: `claude-history-item-scope claude-scope-${entry.scope}`,
-			});
 
 			const meta = item.createDiv({ cls: "claude-history-item-meta" });
 			const parts: string[] = [formatTimestamp(entry.timestamp)];
@@ -144,12 +140,6 @@ export class ClaudeHistoryView extends ItemView {
 				text: parts.join(" · "),
 				cls: "claude-history-item-info",
 			});
-			if (entry.notePath) {
-				meta.createSpan({
-					text: entry.notePath,
-					cls: "claude-history-item-note",
-				});
-			}
 
 			header.createSpan({
 				text: entry.status,
@@ -196,9 +186,8 @@ export class ClaudeHistoryView extends ItemView {
 			});
 		}
 
-		const scopeLabel = entry.scope === "note" ? "note" : "vault";
 		detail.createDiv({
-			text: `"${entry.promptName}" (${scopeLabel}) — ${formatTimestamp(entry.timestamp)}`,
+			text: `"${entry.promptName}" — ${formatTimestamp(entry.timestamp)}`,
 			cls: "claude-output-status",
 		});
 

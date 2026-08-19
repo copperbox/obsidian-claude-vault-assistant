@@ -402,7 +402,6 @@ describe("ClaudeChatView.startPromptChat", () => {
 	function makeLaunch() {
 		return {
 			promptName: "Daily",
-			scope: "vault" as const,
 			message: "Summarize my day.",
 			settings: {
 				...DEFAULT_SETTINGS,
@@ -502,7 +501,6 @@ describe("ClaudeChatView.resumeFromHistory", () => {
 		return {
 			id: "entry-1",
 			promptName: "Old chat",
-			scope: "vault" as const,
 			timestamp: 1700000000000,
 			durationMs: 4000,
 			status: "success" as const,

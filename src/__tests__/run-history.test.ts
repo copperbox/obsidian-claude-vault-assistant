@@ -14,7 +14,6 @@ function makeEntry(overrides: Partial<RunHistoryEntry> = {}): RunHistoryEntry {
 	return {
 		id: generateEntryId(),
 		promptName: "Test Prompt",
-		scope: "vault",
 		timestamp: Date.now(),
 		durationMs: 5000,
 		status: "success",
@@ -180,24 +179,20 @@ describe("run-history", () => {
 		it("stores all required fields", () => {
 			const entry = makeEntry({
 				promptName: "Summarize",
-				scope: "note",
 				status: "error",
 				costUsd: 0.05,
-				notePath: "notes/test.md",
 				output: "Error occurred",
 			});
 			expect(entry.promptName).toBe("Summarize");
-			expect(entry.scope).toBe("note");
 			expect(entry.status).toBe("error");
 			expect(entry.costUsd).toBe(0.05);
-			expect(entry.notePath).toBe("notes/test.md");
 			expect(entry.output).toBe("Error occurred");
 		});
 
 		it("allows optional fields to be undefined", () => {
 			const entry = makeEntry();
 			expect(entry.costUsd).toBeUndefined();
-			expect(entry.notePath).toBeUndefined();
+			expect(entry.sessionId).toBeUndefined();
 		});
 	});
 });

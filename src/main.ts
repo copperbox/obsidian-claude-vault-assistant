@@ -231,10 +231,8 @@ export default class ClaudeVaultAssistant extends Plugin {
 
 		await view.startPromptChat({
 			promptName,
-			scope,
 			message,
 			settings: runSettings,
-			notePath,
 			extraSystemPrompt,
 		});
 	}

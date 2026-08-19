@@ -6,7 +6,6 @@ function makeEntry(overrides: Partial<RunHistoryEntry> = {}): RunHistoryEntry {
 	return {
 		id: generateEntryId(),
 		promptName: "Test Prompt",
-		scope: "vault",
 		timestamp: Date.now(),
 		durationMs: 5000,
 		status: "success",
@@ -111,11 +110,9 @@ describe("ClaudeHistoryView", () => {
 			view.setHistorySource(() => [
 				makeEntry({
 					promptName: "Summarize",
-					scope: "note",
 					status: "error",
 					costUsd: 0.05,
 					tokens: 12345,
-					notePath: "notes/test.md",
 					sessionId: "sess-2",
 				}),
 			]);

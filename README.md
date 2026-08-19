@@ -110,7 +110,7 @@ If Claude requests a tool that isn't on the `Allowed tools` whitelist (and the p
 
 ### History
 
-Use `Open Claude history` from the command palette to browse past sessions. Every conversation — prompt-launched or started by hand — records one entry showing its name, scope, timestamp, duration, status, and cost, updated after every turn. Click an entry to review its output, and use **Clear history** to remove all entries.
+Use `Open Claude history` from the command palette to browse past sessions. Every conversation — prompt-launched or started by hand — records one entry showing its name, timestamp, duration, status, and cost, updated after every turn. Click an entry to review its output, and use **Clear history** to remove all entries.
 
 **Resuming a conversation.** Clicking an entry recorded with a session id opens it straight in the chat view — like switching to another chat: the past output renders as context and the stored CLI session reconnects, with Claude retaining the full conversation, so you simply type your next message to continue where you left off. Further turns keep updating the same history entry. Entries recorded before session ids existed open in a read-only replay instead. (Resume needs the CLI's stored session under `~/.claude/projects/`; if it has been cleaned up, the resumed chat reports an error.)
 
@@ -198,7 +198,7 @@ This plugin runs the [Claude Code CLI](https://docs.anthropic.com/en/docs/claude
 
 - **Account required**: You need an authenticated Anthropic account with billing to use the Claude Code CLI.
 - **What is sent**: Prompt file contents, chat messages, vault file contents read by Claude during a run, and any system prompt from your `CLAUDE.md` file.
-- **What is stored locally**: Session history (name, scope, timestamps, cost, assistant output, and the CLI session id) is stored in the plugin's data file within your vault's `.obsidian/plugins/` directory. The CLI itself also persists conversation transcripts under `~/.claude/projects/` — that's what makes resuming a conversation possible; clear them with the CLI's own tooling if you don't want them kept.
+- **What is stored locally**: Session history (name, timestamps, cost, assistant output, and the CLI session id) is stored in the plugin's data file within your vault's `.obsidian/plugins/` directory. The CLI itself also persists conversation transcripts under `~/.claude/projects/` — that's what makes resuming a conversation possible; clear them with the CLI's own tooling if you don't want them kept.
 - **No telemetry**: This plugin does not collect analytics or send any data independently of the CLI.
 
 See [Anthropic's Privacy Policy](https://www.anthropic.com/privacy) for details on how Anthropic handles data sent via the CLI.
